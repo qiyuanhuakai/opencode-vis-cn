@@ -249,6 +249,7 @@ const reasoningTitleBySessionId = new Map<string, string>();
 const sessionStatusById = new Map<string, 'busy' | 'idle'>();
 const reasoningCloseTimers = new Map<string, number>();
 const lastReasoningMessageIdByKey = new Map<string, string>();
+const globalEventHooks = new Set<(payload: unknown, eventType: string) => void>();
 const dragState = ref<{
   entry: FileReadEntry;
   startX: number;
@@ -297,6 +298,10 @@ type SessionInfo = {
   title?: string;
   slug?: string;
   directory?: string;
+  time?: {
+    created?: number;
+    updated?: number;
+  };
 };
 
 type WorktreeInfo = {
@@ -343,6 +348,7 @@ type CommandInfo = {
 const projects = ref<ProjectInfo[]>([]);
 const worktrees = ref<string[]>([]);
 const sessions = ref<SessionInfo[]>([]);
+const sessionParentById = shallowRef(new Map<string, string | undefined>());
 const providers = ref<ProviderInfo[]>([]);
 const agents = ref<AgentInfo[]>([]);
 const commands = ref<CommandInfo[]>([]);
@@ -362,7 +368,6 @@ const selectedSessionId = ref('');
 const selectedProjectDirectory = ref('');
 const initialQuery = readQuerySelection();
 if (initialQuery.projectId) selectedProjectId.value = initialQuery.projectId;
-if (initialQuery.worktreeDir) selectedWorktreeDir.value = initialQuery.worktreeDir;
 if (initialQuery.sessionId) selectedSessionId.value = initialQuery.sessionId;
 const isProjectPickerOpen = ref(false);
 const selectedMode = ref('build');
@@ -387,8 +392,9 @@ const isStatusError = computed(() =>
 const filteredSessions = computed(() =>
   sessions.value.filter((session) => {
     if (session.parentID) return false;
-    if (!selectedProjectId.value) return true;
-    return session.projectID === selectedProjectId.value;
+    const directory = selectedWorktreeDir.value || selectedProjectDirectory.value || '';
+    if (directory && session.directory && session.directory !== directory) return false;
+    return true;
   }),
 );
 
@@ -400,11 +406,11 @@ const allowedSessionIds = computed(() => {
   const rootId = selectedSessionId.value;
   if (!rootId) return new Set<string>();
   const childrenByParent = new Map<string, string[]>();
-  sessions.value.forEach((session) => {
-    if (!session.parentID) return;
-    const bucket = childrenByParent.get(session.parentID) ?? [];
-    bucket.push(session.id);
-    childrenByParent.set(session.parentID, bucket);
+  sessionParentById.value.forEach((parentId, sessionId) => {
+    if (!parentId) return;
+    const bucket = childrenByParent.get(parentId) ?? [];
+    bucket.push(sessionId);
+    childrenByParent.set(parentId, bucket);
   });
   const allowed = new Set<string>();
   const stack = [rootId];
@@ -466,6 +472,31 @@ function sessionLabel(session: SessionInfo) {
   return `${base} (${session.id.slice(0, 6)})`;
 }
 
+function getSelectedWorktreeDirectory() {
+  return selectedWorktreeDir.value.trim();
+}
+
+function requireSelectedWorktree(context: 'send') {
+  const directory = getSelectedWorktreeDirectory();
+  if (directory) return directory;
+  const message = 'No worktree selected.';
+  sendStatus.value = message;
+  return '';
+}
+
+function sessionSortKey(session: SessionInfo) {
+  return session.time?.updated ?? session.time?.created ?? 0;
+}
+
+function pickPreferredSessionId(list: SessionInfo[]) {
+  if (!Array.isArray(list) || list.length === 0) return '';
+  const sorted = list
+    .filter((session) => !session.parentID)
+    .slice()
+    .sort((a, b) => sessionSortKey(b) - sessionSortKey(a));
+  return sorted[0]?.id ?? '';
+}
+
 function toErrorMessage(error: unknown) {
   if (error instanceof Error) return error.message;
   return String(error);
@@ -473,38 +504,35 @@ function toErrorMessage(error: unknown) {
 
 type QuerySelection = {
   projectId: string;
-  worktreeDir: string;
   sessionId: string;
 };
 
 function readQuerySelection(): QuerySelection {
-  if (typeof window === 'undefined') return { projectId: '', worktreeDir: '', sessionId: '' };
+  if (typeof window === 'undefined') return { projectId: '', sessionId: '' };
   const params = new URLSearchParams(window.location.search);
   return {
     projectId: params.get('project')?.trim() ?? '',
-    worktreeDir: params.get('worktree')?.trim() ?? '',
     sessionId: params.get('session')?.trim() ?? '',
   };
 }
 
-function replaceQuerySelection(projectId: string, worktreeDir: string, sessionId: string) {
+function replaceQuerySelection(projectId: string, sessionId: string) {
   if (typeof window === 'undefined') return;
-  if (!projectId || !sessionId) return;
   const url = new URL(window.location.href);
   const nextProject = projectId.trim();
-  const nextWorktree = worktreeDir.trim();
   const nextSession = sessionId.trim();
   const params = url.searchParams;
-  const prevWorktree = params.get('worktree') ?? '';
+  const currentProject = params.get('project') ?? '';
+  const currentSession = params.get('session') ?? '';
+  const hasLegacyWorktree = params.has('worktree');
   const sameSelection =
-    params.get('project') === nextProject &&
-    params.get('session') === nextSession &&
-    (prevWorktree === nextWorktree || (!prevWorktree && !nextWorktree));
+    currentProject === nextProject && currentSession === nextSession && !hasLegacyWorktree;
   if (sameSelection) return;
-  params.set('project', nextProject);
-  if (nextWorktree) params.set('worktree', nextWorktree);
-  else params.delete('worktree');
-  params.set('session', nextSession);
+  if (nextProject) params.set('project', nextProject);
+  else params.delete('project');
+  if (nextSession) params.set('session', nextSession);
+  else params.delete('session');
+  params.delete('worktree');
   url.search = params.toString();
   window.history.replaceState({}, '', url.toString());
 }
@@ -971,6 +999,37 @@ function upsertSessionFromEvent(info: SessionInfo) {
   }
 }
 
+function buildSessionParentMap(list: SessionInfo[]) {
+  const map = new Map<string, string | undefined>();
+  list.forEach((session) => {
+    map.set(session.id, session.parentID);
+  });
+  return map;
+}
+
+function setSessions(list: SessionInfo[]) {
+  const next = Array.isArray(list) ? list : [];
+  sessions.value = next;
+  sessionParentById.value = buildSessionParentMap(next);
+}
+
+function clearSessions() {
+  sessions.value = [];
+  sessionParentById.value = new Map();
+}
+
+function upsertSessionGraph(info: SessionInfo) {
+  const next = new Map(sessionParentById.value);
+  next.set(info.id, info.parentID);
+  sessionParentById.value = next;
+}
+
+function removeSessionFromGraph(sessionId: string) {
+  const next = new Map(sessionParentById.value);
+  next.delete(sessionId);
+  sessionParentById.value = next;
+}
+
 async function fetchProjects(directory?: string) {
   projectError.value = '';
   try {
@@ -1012,6 +1071,18 @@ async function fetchCurrentProject(directory?: string) {
   }
 }
 
+async function fetchSessionById(sessionId: string) {
+  if (!sessionId) return null;
+  try {
+    const response = await fetch(`${OPENCODE_BASE_URL}/session/${sessionId}`);
+    if (!response.ok) return null;
+    const data = (await response.json()) as SessionInfo;
+    return data && typeof data.id === 'string' ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 async function fetchSessions(options: {
   directory?: string;
   roots?: boolean;
@@ -1030,11 +1101,23 @@ async function fetchSessions(options: {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Session request failed (${response.status})`);
     const data = (await response.json()) as SessionInfo[];
-    sessions.value = Array.isArray(data) ? data : [];
+    const list = Array.isArray(data) ? data : [];
+    if (options.directory && selectedWorktreeDir.value && options.directory !== selectedWorktreeDir.value) {
+      return;
+    }
+    setSessions(list);
   } catch (error) {
     const message = `Session load failed: ${toErrorMessage(error)}`;
     sessionError.value = message;
   }
+}
+
+function refreshSessionsForDirectory(directory?: string) {
+  if (!directory) {
+    clearSessions();
+    return Promise.resolve();
+  }
+  return fetchSessions({ directory });
 }
 
 async function fetchWorktrees(directory?: string) {
@@ -1054,7 +1137,10 @@ async function fetchWorktrees(directory?: string) {
     const data = (await response.json()) as string[];
     const baseDir = directory?.trim() ?? '';
     const list = Array.isArray(data) ? data.slice() : [];
+    if (directory !== selectedProjectDirectory.value) return;
     if (baseDir && !list.includes(baseDir)) list.unshift(baseDir);
+    const current = selectedWorktreeDir.value;
+    if (current && !list.includes(current)) list.unshift(current);
     worktrees.value = list;
   } catch (error) {
     worktreeError.value = `Worktree load failed: ${toErrorMessage(error)}`;
@@ -1138,13 +1224,18 @@ async function createNewSession() {
     if (!response.ok) throw new Error(`Session create failed (${response.status})`);
     const data = (await response.json()) as SessionInfo;
     if (data && typeof data.id === 'string') {
-      const existing = sessions.value.find((session) => session.id === data.id);
-      if (!existing) sessions.value.unshift(data);
+      const matchesDirectory =
+        !data.directory || data.directory === selectedWorktreeDir.value || !selectedWorktreeDir.value;
+      if (matchesDirectory) {
+        const existing = sessions.value.find((session) => session.id === data.id);
+        if (!existing) sessions.value.unshift(data);
+        upsertSessionGraph(data);
+      }
       selectedSessionId.value = data.id;
-      if (data.projectID) selectedProjectId.value = data.projectID;
+      if (data.projectID && !selectedProjectId.value) selectedProjectId.value = data.projectID;
       if (data.directory) selectedWorktreeDir.value = data.directory;
     }
-    void fetchSessions({ directory: activeDirectory.value || undefined, roots: true, limit: 200 });
+    void refreshSessionsForDirectory(activeDirectory.value || undefined);
   } catch (error) {
     sessionError.value = `Session create failed: ${toErrorMessage(error)}`;
   }
@@ -1159,7 +1250,9 @@ async function deleteSession(sessionId: string) {
     });
     if (!response.ok) throw new Error(`Session delete failed (${response.status})`);
     if (selectedSessionId.value === sessionId) selectedSessionId.value = '';
-    void fetchSessions({ directory: activeDirectory.value || undefined, roots: true, limit: 200 });
+    removeSessionFromGraph(sessionId);
+    sessions.value = sessions.value.filter((session) => session.id !== sessionId);
+    void refreshSessionsForDirectory(activeDirectory.value || undefined);
   } catch (error) {
     sessionError.value = `Session delete failed: ${toErrorMessage(error)}`;
   }
@@ -1172,6 +1265,7 @@ async function handleProjectDirectorySelect(directory: string) {
   selectedWorktreeDir.value = '';
   selectedSessionId.value = '';
   worktrees.value = [];
+  clearSessions();
   const current = await fetchCurrentProject(directory);
   await fetchProjects();
   if (current) {
@@ -1190,35 +1284,54 @@ async function bootstrapSelections() {
     const current = await fetchCurrentProject();
     await fetchProjects();
     if (current) upsertProject(current);
-    if (!selectedProjectId.value) {
-      const preferred =
+
+    let resolvedProjectId = selectedProjectId.value;
+    const sessionFromUrl = selectedSessionId.value
+      ? await fetchSessionById(selectedSessionId.value)
+      : null;
+    if (sessionFromUrl?.projectID) {
+      resolvedProjectId = sessionFromUrl.projectID;
+    }
+    if (!resolvedProjectId) {
+      resolvedProjectId =
         current?.id ??
         projects.value.find((project) => project.id !== 'global')?.id ??
         projects.value[0]?.id ??
         '';
-      if (preferred) selectedProjectId.value = preferred;
     }
+    if (resolvedProjectId) selectedProjectId.value = resolvedProjectId;
+
     if (!selectedProjectDirectory.value) {
-      const project = projects.value.find((item) => item.id === selectedProjectId.value);
+      const project = projects.value.find((item) => item.id === resolvedProjectId);
       if (project) {
         const baseDir = projectBaseDirectory(project);
         if (baseDir) selectedProjectDirectory.value = baseDir;
       }
     }
+
     if (selectedProjectDirectory.value) {
       await fetchWorktrees(selectedProjectDirectory.value);
     } else {
       worktrees.value = [];
     }
+
+    if (sessionFromUrl?.directory) {
+      selectedWorktreeDir.value = sessionFromUrl.directory;
+      if (!worktrees.value.includes(sessionFromUrl.directory)) {
+        worktrees.value = [sessionFromUrl.directory, ...worktrees.value];
+      }
+    }
+
     if (!selectedWorktreeDir.value) {
       if (worktrees.value.length > 0) selectedWorktreeDir.value = worktrees.value[0] ?? '';
     }
-    const directory = activeDirectory.value || undefined;
+
+    const directory = selectedWorktreeDir.value || selectedProjectDirectory.value || undefined;
     if (directory) {
       await fetchCommands(directory);
-      await fetchSessions({ directory, roots: true, limit: 200 });
+      await refreshSessionsForDirectory(directory);
     } else {
-      sessions.value = [];
+      clearSessions();
     }
   } finally {
     isBootstrapping.value = false;
@@ -1378,7 +1491,13 @@ async function fetchPendingPermissions() {
 async function fetchHistory(sessionId: string, isSubagentMessage = false) {
   if (!sessionId) return;
   try {
-    const response = await fetch(`${OPENCODE_BASE_URL}/session/${sessionId}/message`);
+    const directory = getSelectedWorktreeDirectory();
+    const params = new URLSearchParams();
+    if (directory) params.set('directory', directory);
+    const query = params.toString();
+    const response = await fetch(
+      `${OPENCODE_BASE_URL}/session/${sessionId}/message${query ? `?${query}` : ''}`,
+    );
     if (!response.ok) throw new Error(`History request failed (${response.status})`);
     const data = (await response.json()) as Array<Record<string, unknown>>;
     if (!Array.isArray(data)) return;
@@ -1706,13 +1825,13 @@ async function sendMessage() {
   const text = messageInput.value.trim();
   let sessionId = selectedSessionId.value;
   if (!text || !sessionId) return;
-  const expectedProjectId = selectedProjectId.value;
   if (
-    !filteredSessions.value.some(
-      (session) => session.id === sessionId && session.projectID === expectedProjectId,
-    )
+    !filteredSessions.value.some((session) => session.id === sessionId)
   ) {
-    const fallback = filteredSessions.value[0];
+    const fallbackId = pickPreferredSessionId(filteredSessions.value);
+    const fallback = fallbackId
+      ? filteredSessions.value.find((session) => session.id === fallbackId)
+      : filteredSessions.value[0];
     if (!fallback) {
       sendStatus.value = 'No session selected.';
       return;
@@ -1739,7 +1858,12 @@ async function sendMessage() {
       sendStatus.value = 'Sent.';
       return;
     }
-    const response = await fetch(`${OPENCODE_BASE_URL}/session/${sessionId}/message`, {
+    const directory = requireSelectedWorktree('send');
+    if (!directory) return;
+    const params = new URLSearchParams({ directory });
+    const response = await fetch(
+      `${OPENCODE_BASE_URL}/session/${sessionId}/message?${params.toString()}`,
+      {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1753,7 +1877,8 @@ async function sendMessage() {
         variant: selectedThinking.value !== 'default' ? selectedThinking.value : undefined,
         parts: [{ type: 'text', text }],
       }),
-    });
+      },
+    );
     if (!response.ok) throw new Error(`Send failed (${response.status})`);
     sendStatus.value = 'Sent.';
   } catch (error) {
@@ -1808,21 +1933,19 @@ watch(
   selectedProjectId,
   (value, previous) => {
     if (value === previous) return;
-    if (previous) {
-      selectedProjectDirectory.value = '';
-      selectedWorktreeDir.value = '';
-      selectedSessionId.value = '';
-      worktrees.value = [];
-      sessions.value = [];
-    }
+    if (typeof previous === 'undefined') return;
+    if (isBootstrapping.value) return;
+    selectedProjectDirectory.value = '';
+    selectedWorktreeDir.value = '';
+    selectedSessionId.value = '';
+    worktrees.value = [];
+    clearSessions();
     const project = projects.value.find((item) => item.id === value);
     if (project) {
       const baseDir = projectBaseDirectory(project);
       if (baseDir) {
         selectedProjectDirectory.value = baseDir;
         void fetchWorktrees(baseDir);
-        void fetchCommands(baseDir);
-        void fetchSessions({ directory: baseDir, roots: true, limit: 200 });
       }
     }
   },
@@ -1833,13 +1956,12 @@ watch(
   selectedProjectDirectory,
   (directory, previous) => {
     if (directory === previous) return;
+    if (typeof previous === 'undefined') return;
     if (isBootstrapping.value) return;
-    if (previous) {
-      selectedWorktreeDir.value = '';
-      selectedSessionId.value = '';
-      worktrees.value = [];
-      sessions.value = [];
-    }
+    selectedWorktreeDir.value = '';
+    selectedSessionId.value = '';
+    worktrees.value = [];
+    clearSessions();
     void fetchWorktrees(directory || undefined);
   },
   { immediate: true },
@@ -1856,30 +1978,36 @@ watch(
   { immediate: true },
 );
 
+
 watch(
   selectedWorktreeDir,
   (value, previous) => {
     if (value === previous) return;
-    if (!previous) return;
+    if (typeof previous === 'undefined') return;
+    if (isBootstrapping.value) return;
     selectedSessionId.value = '';
+    clearSessions();
+    if (!value) return;
+    void fetchCommands(value);
+    void refreshSessionsForDirectory(value);
   },
   { immediate: true },
 );
 
 watch(
-  [filteredSessions, selectedProjectId],
+  filteredSessions,
   () => {
-    if (!selectedProjectId.value) return;
     if (filteredSessions.value.length === 0) return;
+    const preferredId = pickPreferredSessionId(filteredSessions.value);
     if (!selectedSessionId.value) {
-      selectedSessionId.value = filteredSessions.value[0]?.id ?? '';
+      if (preferredId) selectedSessionId.value = preferredId;
       return;
     }
     const isValid = filteredSessions.value.some(
       (session) => session.id === selectedSessionId.value,
     );
     if (!isValid) {
-      selectedSessionId.value = filteredSessions.value[0]?.id ?? '';
+      if (preferredId) selectedSessionId.value = preferredId;
     }
   },
   { immediate: true },
@@ -1902,21 +2030,13 @@ watch(selectedSessionId, () => {
     void restoreShellSessions(selectedSessionId.value);
   }
   void fetchSessionStatus();
-  if (selectedProjectId.value && selectedSessionId.value) {
-    replaceQuerySelection(
-      selectedProjectId.value,
-      selectedWorktreeDir.value,
-      selectedSessionId.value,
-    );
-  }
 },
 { immediate: true });
 
 watch(
-  [selectedProjectId, selectedWorktreeDir, selectedSessionId],
-  ([projectId, worktreeDir, sessionId]) => {
-    if (!projectId || !sessionId) return;
-    replaceQuerySelection(projectId, worktreeDir, sessionId);
+  [selectedProjectId, selectedSessionId],
+  ([projectId, sessionId]) => {
+    replaceQuerySelection(projectId, sessionId);
   },
   { immediate: true },
 );
@@ -1948,12 +2068,9 @@ watch(selectedModel, () => {
 watch(activeDirectory, (directory) => {
   if (isBootstrapping.value) return;
   const activePath = directory || undefined;
-  if (!activePath) {
-    sessions.value = [];
-    return;
-  }
+  if (!activePath) return;
+  if (selectedWorktreeDir.value && activePath !== selectedWorktreeDir.value) return;
   void fetchCommands(activePath);
-  void fetchSessions({ directory: activePath, roots: true, limit: 200 });
 });
 
 function log(...args: any) {
@@ -2083,49 +2200,23 @@ function normalizeEventType(type: string) {
   return type.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
-function isSessionCreateEvent(type?: string) {
+function isSessionDeleteEvent(type?: string) {
   if (!type) return false;
   const normalized = normalizeEventType(type);
-  return normalized === 'sessioncreated' || normalized === 'sessioncreate';
+  return normalized === 'sessiondeleted' || normalized === 'sessiondelete';
 }
 
-function isSessionUpdateEvent(type?: string) {
-  if (!type) return false;
-  const normalized = normalizeEventType(type);
-  return normalized === 'sessionupdated' || normalized === 'sessionupdate';
+function matchesSelectedProject(sessionInfo: SessionInfo) {
+  const selectedProject = selectedProjectId.value;
+  if (!selectedProject) return true;
+  if (!sessionInfo.projectID) return true;
+  return sessionInfo.projectID === selectedProject;
 }
 
-function shouldReloadSessionsForCreatedEvent(
-  eventType: string,
-  sessionInfo: SessionInfo,
-  activeDirectory: string,
-  selectedProjectId: string,
-) {
-  if (!isSessionCreateEvent(eventType)) return false;
-  if (sessionInfo.parentID) return false;
-  if (selectedProjectId && sessionInfo.projectID && sessionInfo.projectID !== selectedProjectId) {
-    return false;
-  }
-  if (activeDirectory && sessionInfo.directory && sessionInfo.directory !== activeDirectory) {
-    return false;
-  }
-  return true;
-}
-
-function shouldUpsertSessionFromUpdateEvent(
-  eventType: string,
-  sessionInfo: SessionInfo,
-  activeDirectory: string,
-  selectedProjectId: string,
-) {
-  if (!isSessionUpdateEvent(eventType)) return false;
-  if (sessionInfo.parentID) return false;
-  if (selectedProjectId && sessionInfo.projectID && sessionInfo.projectID !== selectedProjectId) {
-    return false;
-  }
-  if (activeDirectory && sessionInfo.directory && sessionInfo.directory !== activeDirectory) {
-    return false;
-  }
+function matchesSelectedWorktree(sessionInfo: SessionInfo) {
+  const directory = selectedWorktreeDir.value.trim() || selectedProjectDirectory.value.trim();
+  if (!directory) return true;
+  if (sessionInfo.directory && sessionInfo.directory !== directory) return false;
   return true;
 }
 
@@ -3496,12 +3587,29 @@ function resumeFollow() {
   nextTick(scrollToBottom);
 }
 
+function registerGlobalEventHook(
+  handler: (payload: unknown, eventType: string) => void,
+) {
+  globalEventHooks.add(handler);
+  return () => globalEventHooks.delete(handler);
+}
+
+function notifyGlobalEventHooks(payload: unknown, eventType: string) {
+  globalEventHooks.forEach((handler) => {
+    try {
+      handler(payload, eventType);
+    } catch (error) {
+      log('global event hook failed', error);
+    }
+  });
+}
+
 const src = shallowRef<EventSource>();
 function connect() {
   if (src.value) return;
 
   log('connecting...');
-  src.value = new EventSource(`${OPENCODE_BASE_URL}/event`);
+  src.value = new EventSource(`${OPENCODE_BASE_URL}/global/event`);
 
   src.value.addEventListener('open', (e) => {
     log('connected.');
@@ -3512,6 +3620,7 @@ function connect() {
     log(payloadText);
 
     const resolvedEventType = resolveEventType(payload, e.type);
+    notifyGlobalEventHooks(payload, resolvedEventType);
 
     const permissionReplied = extractPermissionReplied(payload, resolvedEventType);
     if (permissionReplied) {
@@ -3526,33 +3635,23 @@ function connect() {
 
     const sessionInfo = extractSessionInfo(payload, resolvedEventType);
     if (sessionInfo) {
-      const isSelected = sessionInfo.id === selectedSessionId.value;
-      const isChild = sessionInfo.parentID && allowedSessionIds.value.has(sessionInfo.parentID);
-      const shouldUpsertFromUpdate = shouldUpsertSessionFromUpdateEvent(
-        resolvedEventType,
-        sessionInfo,
-        activeDirectory.value,
-        selectedProjectId.value,
-      );
-      if (isSelected || isChild || shouldUpsertFromUpdate) {
-        upsertSessionFromEvent(sessionInfo);
-        if (sessionInfo.parentID) {
-          subagentSessionExpiry.set(sessionInfo.id, Date.now() + SUBAGENT_ACTIVE_TTL_MS);
+      if (matchesSelectedProject(sessionInfo)) {
+        const matchesWorktree = matchesSelectedWorktree(sessionInfo);
+        if (isSessionDeleteEvent(resolvedEventType)) {
+          removeSessionFromGraph(sessionInfo.id);
+          if (matchesWorktree) {
+            sessions.value = sessions.value.filter((session) => session.id !== sessionInfo.id);
+          }
+          if (selectedSessionId.value === sessionInfo.id) selectedSessionId.value = '';
+        } else {
+          upsertSessionGraph(sessionInfo);
+          if (matchesWorktree) {
+            upsertSessionFromEvent(sessionInfo);
+          }
+          if (sessionInfo.parentID) {
+            subagentSessionExpiry.set(sessionInfo.id, Date.now() + SUBAGENT_ACTIVE_TTL_MS);
+          }
         }
-      }
-      if (
-        shouldReloadSessionsForCreatedEvent(
-          resolvedEventType,
-          sessionInfo,
-          activeDirectory.value,
-          selectedProjectId.value,
-        )
-      ) {
-        void fetchSessions({
-          directory: activeDirectory.value || undefined,
-          roots: true,
-          limit: 200,
-        });
       }
     }
 
@@ -3575,8 +3674,7 @@ function connect() {
       }
     }
 
-    const canRenderSession =
-      Boolean(selectedSessionId.value) && filteredSessions.value.length > 0;
+    const canRenderSession = Boolean(selectedSessionId.value);
     if (!canRenderSession) return;
 
     const ptyEvent = extractPtyEvent(payload, resolvedEventType);
