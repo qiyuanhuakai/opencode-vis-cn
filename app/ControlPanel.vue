@@ -65,7 +65,7 @@
             class="control-input"
             :disabled="!hasAgentOptions"
             aria-label="Agent"
-            title="Agent"
+            title="Agent (Tab)"
           >
             <option v-if="!hasAgentOptions" value="">Loading agents...</option>
             <option v-for="agent in agentOptions" :key="agent.id" :value="agent.id">
@@ -81,7 +81,7 @@
             class="control-input"
             :disabled="!hasModelOptions"
             aria-label="Model"
-            title="Model"
+            title="Model (Ctrl-M)"
           >
             <option v-if="!hasModelOptions" value="">Loading models...</option>
             <option v-for="model in modelOptions" :key="model.id" :value="model.id">
@@ -96,7 +96,7 @@
             class="control-input"
             :disabled="!hasThinkingOptions"
             aria-label="Variant"
-            title="Variant"
+            title="Variant (Ctrl-, / Ctrl-.)"
           >
             <option v-if="!hasThinkingOptions" value="">Loading...</option>
             <option v-for="option in thinkingOptions" :key="option ?? '__default'" :value="option">

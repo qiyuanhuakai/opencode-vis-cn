@@ -684,8 +684,7 @@ function replaceHomePrefix(path: string) {
 }
 
 function sessionLabel(session: SessionInfo) {
-  const base = session.title || session.slug || session.id;
-  return `${base} (${session.id.slice(0, 6)})`;
+  return session.title || session.slug || session.id;
 }
 
 function getSelectedWorktreeDirectory() {
