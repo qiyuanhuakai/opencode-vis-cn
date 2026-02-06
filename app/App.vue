@@ -175,8 +175,7 @@ const HISTORY_LIMIT = 60;
 const FOLLOW_THRESHOLD_PX = 24;
 const FLOATING_FOLLOW_THRESHOLD_PX = 2;
 const TOOL_PENDING_TTL_MS = 60_000;
-const TOOL_RUNNING_TTL_MS = 5_000;
-const TOOL_COMPLETE_TTL_MS = 3_000;
+const TOOL_COMPLETE_TTL_MS = 2_000;
 const TOOL_SCROLL_SPEED_PX_S = 2000;
 const TOOL_SCROLL_HOLD_MS = 250;
 const TOOL_SCROLL_MAX_DURATION_S = 3;
@@ -250,6 +249,7 @@ type FileReadEntry = {
   toolStatus?: string;
   toolName?: string;
   toolTitle?: string;
+  toolLang?: string;
   messageId?: string;
   messageKey?: string;
   messageAgent?: string;
@@ -1077,10 +1077,7 @@ function getEntryTitle(entry: FileReadEntry) {
     if (sessionTitle) return withPrefix(sessionTitle);
   }
   const displayPath = resolveWorktreeRelativePath(entry.path);
-  if (
-    displayPath &&
-    (entry.toolName === 'read' || entry.toolName === 'grep' || entry.toolName === 'apply_patch')
-  )
+  if (displayPath && (entry.toolName === 'read' || entry.toolName === 'apply_patch'))
     return withPrefix(displayPath);
   if (entry.toolTitle) return withPrefix(entry.toolTitle);
   if (entry.toolName) return withPrefix(entry.toolName);
@@ -1104,7 +1101,11 @@ function getEntryPrefix(entry: FileReadEntry) {
   if (entry.toolName === 'read') return 'READ';
   if (entry.toolName === 'grep') return 'GREP';
   if (entry.toolName === 'glob') return 'GLOB';
+  if (entry.toolName === 'list') return 'LS';
   if (entry.toolName === 'bash') return 'SHELL';
+  if (entry.toolName === 'webfetch') return 'FETCH';
+  if (entry.toolName === 'websearch') return 'SEARCH';
+  if (entry.toolName === 'codesearch') return 'CODE';
   if (entry.toolName) return entry.toolName.toUpperCase();
   return 'MESSAGE';
 }
@@ -1402,15 +1403,9 @@ function scheduleToolScrollAnimation(toolKey: string) {
           entry.toolName === 'read'
             ? Math.min(baseDuration, TOOL_SCROLL_MAX_DURATION_S)
             : baseDuration;
-        const now = Date.now();
-        const baseExpiry = now + Math.ceil(duration * 1000 + TOOL_SCROLL_HOLD_MS);
-        const nextExpiresAt =
-          entry.toolStatus === 'pending' || entry.toolStatus === 'running'
-            ? entry.expiresAt
-            : Math.max(entry.expiresAt, baseExpiry);
         queue.value.splice(index, 1, {
           ...entry,
-          expiresAt: nextExpiresAt,
+          expiresAt: entry.expiresAt,
           scroll: true,
           scrollDistance: distance,
           scrollDuration: duration,
@@ -3216,18 +3211,6 @@ function extractFileBodyFromReadOutput(output: string) {
   return contentLines.join('\n');
 }
 
-function extractBodyFromGrepOutput(output: string) {
-  const lines = output.split('\n');
-  const contentLines: string[] = [];
-  for (const line of lines) {
-    const match = line.match(/^\s*Line\s+\d+:\s?(.*)$/);
-    if (!match) continue;
-    contentLines.push(match[1] ?? '');
-  }
-  if (contentLines.length > 0) return contentLines.join('\n');
-  return output;
-}
-
 function formatGlobToolTitle(input: Record<string, unknown> | undefined) {
   const pattern = typeof input?.pattern === 'string' ? input.pattern.trim() : '';
   const path = typeof input?.path === 'string' ? input.path.trim() : '';
@@ -3238,6 +3221,170 @@ function formatGlobToolTitle(input: Record<string, unknown> | undefined) {
   if (include) segments.push(`include ${include}`);
   const title = segments.join(' ');
   return title || undefined;
+}
+
+const TOOL_WINDOW_HIDDEN = new Set(['question', 'todoread', 'todowrite', 'lsp']);
+const TOOL_WINDOW_SUPPORTED = new Set([
+  'apply_patch',
+  'bash',
+  'batch',
+  'codesearch',
+  'edit',
+  'glob',
+  'grep',
+  'list',
+  'multiedit',
+  'plan_enter',
+  'plan_exit',
+  'read',
+  'task',
+  'webfetch',
+  'websearch',
+  'write',
+]);
+
+function shouldRenderToolWindow(tool: string) {
+  return !TOOL_WINDOW_HIDDEN.has(tool) && TOOL_WINDOW_SUPPORTED.has(tool);
+}
+
+function formatBashToolTitle(
+  input: Record<string, unknown> | undefined,
+  state: Record<string, unknown> | undefined,
+) {
+  const description = typeof input?.description === 'string' ? input.description.trim() : '';
+  if (description) return description;
+  const stateTitle = typeof state?.title === 'string' ? state.title.trim() : '';
+  if (stateTitle) return stateTitle;
+  const command = typeof input?.command === 'string' ? input.command.trim() : '';
+  if (!command) return undefined;
+  const firstLine = command.split('\n')[0]?.trim() ?? '';
+  return firstLine.length > 96 ? `${firstLine.slice(0, 93)}...` : firstLine;
+}
+
+function formatListToolTitle(input: Record<string, unknown> | undefined) {
+  const path = typeof input?.path === 'string' ? input.path.trim() : '';
+  return path || undefined;
+}
+
+function formatReadLikeToolTitle(input: Record<string, unknown> | undefined) {
+  const filePath = typeof input?.filePath === 'string' ? input.filePath.trim() : '';
+  if (filePath) return filePath;
+  const path = typeof input?.path === 'string' ? input.path.trim() : '';
+  return path || undefined;
+}
+
+function formatWebfetchToolTitle(input: Record<string, unknown> | undefined) {
+  const url = typeof input?.url === 'string' ? input.url.trim() : '';
+  return url || undefined;
+}
+
+function formatQueryToolTitle(input: Record<string, unknown> | undefined) {
+  const query = typeof input?.query === 'string' ? input.query.trim() : '';
+  return query || undefined;
+}
+
+function formatTaskToolOutput(output: string) {
+  const taskIdMatch = output.match(/^task_id:\s*(.+)$/m);
+  const bodyMatch = output.match(/<task_result>\n?([\s\S]*?)\n?<\/task_result>/);
+  const parts: string[] = [];
+  if (taskIdMatch?.[1]) parts.push(`task_id: ${taskIdMatch[1].trim()}`);
+  if (bodyMatch?.[1]) parts.push(bodyMatch[1].trim());
+  if (parts.length > 0) return parts.join('\n\n');
+  return output;
+}
+
+function formatBashToolContent(
+  input: Record<string, unknown> | undefined,
+  output: string,
+  status?: string,
+) {
+  const command = typeof input?.command === 'string' ? input.command : '';
+  const lines: string[] = [];
+  if (command.trim()) {
+    lines.push(`$ ${command}`);
+  }
+  if (output.trim()) {
+    if (lines.length > 0) lines.push('');
+    lines.push(output);
+  }
+  if (lines.length === 0 && status === 'running') return '$';
+  return lines.join('\n');
+}
+
+function parsePatchTextBlocks(patchText: string) {
+  const lines = patchText.split('\n');
+  const blocks: Array<{ path?: string; content: string }> = [];
+  let currentPath: string | undefined;
+  let currentKind: 'update' | 'add' | 'delete' | undefined;
+  let currentLines: string[] = [];
+
+  const pushCurrent = () => {
+    if (!currentPath || currentLines.length === 0) {
+      currentPath = undefined;
+      currentKind = undefined;
+      currentLines = [];
+      return;
+    }
+    blocks.push({
+      path: currentPath,
+      content: currentLines.join('\n').trim(),
+    });
+    currentPath = undefined;
+    currentKind = undefined;
+    currentLines = [];
+  };
+
+  const startFileBlock = (kind: 'update' | 'add' | 'delete', path: string) => {
+    pushCurrent();
+    currentPath = path.trim();
+    currentKind = kind;
+    currentLines = [`diff --git a/${currentPath} b/${currentPath}`];
+    if (kind === 'add') {
+      currentLines.push('--- /dev/null');
+      currentLines.push(`+++ b/${currentPath}`);
+    } else if (kind === 'delete') {
+      currentLines.push(`--- a/${currentPath}`);
+      currentLines.push('+++ /dev/null');
+    } else {
+      currentLines.push(`--- a/${currentPath}`);
+      currentLines.push(`+++ b/${currentPath}`);
+    }
+  };
+
+  for (const line of lines) {
+    if (line.startsWith('*** Update File: ')) {
+      startFileBlock('update', line.replace('*** Update File: ', ''));
+      continue;
+    }
+    if (line.startsWith('*** Add File: ')) {
+      startFileBlock('add', line.replace('*** Add File: ', ''));
+      continue;
+    }
+    if (line.startsWith('*** Delete File: ')) {
+      startFileBlock('delete', line.replace('*** Delete File: ', ''));
+      continue;
+    }
+    if (line.startsWith('*** Move to: ') && currentPath && currentKind === 'update') {
+      const moveTo = line.replace('*** Move to: ', '').trim();
+      currentLines.push(`rename from ${currentPath}`);
+      currentLines.push(`rename to ${moveTo}`);
+      currentPath = moveTo;
+      continue;
+    }
+    if (!currentPath) continue;
+    if (
+      line.startsWith('@@') ||
+      line.startsWith('+') ||
+      line.startsWith('-') ||
+      line.startsWith(' ') ||
+      line.startsWith('\\')
+    ) {
+      currentLines.push(line);
+    }
+  }
+
+  pushCurrent();
+  return blocks;
 }
 
 function escapeHtml(value: string) {
@@ -3872,43 +4019,6 @@ function formatDiffEntries(entries: unknown[]) {
   return blocks.filter((block) => typeof block === 'string').join('\n\n');
 }
 
-function formatPatchText(patchText: string) {
-  const lines = patchText.split('\n');
-  const output: string[] = [];
-  let currentFile: string | undefined;
-
-  for (const line of lines) {
-    if (line.startsWith('*** Update File: ')) {
-      currentFile = line.replace('*** Update File: ', '').trim();
-      output.push(`diff --git a/${currentFile} b/${currentFile}`);
-      continue;
-    }
-    if (line.startsWith('*** Add File: ')) {
-      currentFile = line.replace('*** Add File: ', '').trim();
-      output.push(`diff --git a/${currentFile} b/${currentFile}`);
-      continue;
-    }
-    if (line.startsWith('*** Delete File: ')) {
-      currentFile = line.replace('*** Delete File: ', '').trim();
-      output.push(`diff --git a/${currentFile} b/${currentFile}`);
-      continue;
-    }
-    if (line.startsWith('@@')) {
-      output.push(line);
-      continue;
-    }
-    if (line.startsWith('+') || line.startsWith('-')) {
-      output.push(line);
-      continue;
-    }
-  }
-
-  return {
-    content: output.join('\n').trim(),
-    path: currentFile,
-  };
-}
-
 function extractPatch(payload: unknown) {
   if (!payload || typeof payload !== 'object') return null;
   const record = payload as Record<string, unknown>;
@@ -3955,44 +4065,94 @@ function extractPatch(payload: unknown) {
       ? (part.state as Record<string, unknown>)
       : undefined;
   const status = typeof state?.status === 'string' ? state.status : undefined;
-  if (status && status !== 'running') {
-    return {
-      content: '',
-      path: 'tool:apply_patch',
-      isWrite: true,
-      callId,
-      toolStatus: status,
-      toolName: 'apply_patch',
-    };
-  }
+  if (!status || status === 'pending') return null;
+
   const input =
     state?.input && typeof state.input === 'object'
       ? (state.input as Record<string, unknown>)
       : undefined;
-  const patchText = input?.patchText;
+  const metadata =
+    state?.metadata && typeof state.metadata === 'object'
+      ? (state.metadata as Record<string, unknown>)
+      : undefined;
+  const output =
+    state?.output ?? (state?.metadata as Record<string, unknown> | undefined)?.output;
+  const outputText = output !== undefined ? extractToolOutputText(output) : '';
+  const stateError = state?.error;
+  const errorText =
+    typeof stateError === 'string'
+      ? stateError
+      : stateError !== undefined
+        ? formatToolValue(stateError)
+        : '';
 
-  if (status === 'running' && typeof patchText === 'string') {
-    const formatted = formatPatchText(patchText);
-    if (!formatted.content) return null;
+  const patchText = typeof input?.patchText === 'string' ? input.patchText : '';
+  const parsedBlocks = patchText ? parsePatchTextBlocks(patchText) : [];
+
+  const metadataFilesRaw = Array.isArray(metadata?.files) ? metadata.files : [];
+  const metadataBlocks = metadataFilesRaw
+    .map((item, index) => {
+      if (!item || typeof item !== 'object') return null;
+      const record = item as Record<string, unknown>;
+      const relativePath =
+        (typeof record.relativePath === 'string' && record.relativePath) ||
+        (typeof record.filePath === 'string' && record.filePath) ||
+        (typeof record.file === 'string' && record.file) ||
+        undefined;
+      const diff = typeof record.diff === 'string' ? record.diff : undefined;
+      if (diff && diff.trim()) {
+        return {
+          path: relativePath,
+          content: diff,
+          index,
+        };
+      }
+      const before = typeof record.before === 'string' ? record.before : undefined;
+      const after = typeof record.after === 'string' ? record.after : undefined;
+      if (before !== undefined || after !== undefined) {
+        const fileName =
+          relativePath ??
+          (parsedBlocks[index]?.path || `patch-${index + 1}`);
+        return {
+          path: fileName,
+          content: buildUnifiedDiff(before ?? '', after ?? '', fileName, {
+            status: typeof record.type === 'string' ? record.type : undefined,
+            additions: typeof record.additions === 'number' ? record.additions : undefined,
+            deletions: typeof record.deletions === 'number' ? record.deletions : undefined,
+          }),
+          index,
+        };
+      }
+      return null;
+    })
+    .filter((entry): entry is { path?: string; content: string; index: number } => Boolean(entry));
+
+  const count = Math.max(parsedBlocks.length, metadataBlocks.length, status === 'error' ? 1 : 0);
+  if (count === 0) return null;
+  const baseCallId = callId ?? 'apply_patch';
+
+  const entries = Array.from({ length: count }, (_, index) => {
+    const parsedBlock = parsedBlocks[index];
+    const metadataBlock = metadataBlocks[index];
+    const path = metadataBlock?.path ?? parsedBlock?.path;
+    const content =
+      metadataBlock?.content ??
+      parsedBlock?.content ??
+      (status === 'error' ? errorText : outputText);
+    const fallbackTitle = path ?? `patch-${index + 1}`;
     return {
-      content: formatted.content,
-      path: formatted.path,
+      content,
+      path: path ?? fallbackTitle,
       isWrite: true,
-      callId,
+      callId: `${baseCallId}:${index}`,
       toolStatus: status,
       toolName: 'apply_patch',
+      toolTitle: path ?? fallbackTitle,
+      lang: 'diff',
     };
-  }
+  }).filter((entry) => entry.content.trim().length > 0);
 
-  const content = formatToolValue(input ?? {});
-  return {
-    content,
-    path: 'tool:apply_patch',
-    isWrite: true,
-    callId,
-    toolStatus: status,
-    toolName: 'apply_patch',
-  };
+  return entries.length > 0 ? entries : null;
 }
 
 function extractFileRead(payload: unknown, eventType: string) {
@@ -4023,103 +4183,164 @@ function extractFileRead(payload: unknown, eventType: string) {
       : undefined;
   const tool = part?.tool;
   if (part?.type === 'tool' && typeof tool === 'string') {
-    if (tool === 'apply_patch' || tool === 'write') return null;
+    if (!shouldRenderToolWindow(tool) || tool === 'apply_patch') return null;
     const state =
       part?.state && typeof part.state === 'object'
         ? (part.state as Record<string, unknown>)
         : undefined;
+    const status = typeof state?.status === 'string' ? state.status : undefined;
+    if (!status || status === 'pending') return null;
     const input =
       state?.input && typeof state.input === 'object'
         ? (state.input as Record<string, unknown>)
         : undefined;
+    const metadata =
+      state?.metadata && typeof state.metadata === 'object'
+        ? (state.metadata as Record<string, unknown>)
+        : undefined;
     const output =
       state?.output ?? (state?.metadata as Record<string, unknown> | undefined)?.output;
-    const status = typeof state?.status === 'string' ? state.status : undefined;
     const callId =
       (part?.callID as string | undefined) ??
       (part?.callId as string | undefined) ??
       (properties?.callID as string | undefined) ??
       (properties?.callId as string | undefined);
-    const path =
-      (input?.filePath as string | undefined) ??
-      (input?.path as string | undefined) ??
-      (input?.name as string | undefined) ??
-      `tool:${tool}`;
     const outputText = output !== undefined ? extractToolOutputText(output) : undefined;
-    const toolTitle =
-      (typeof input?.command === 'string' && input.command.trim()) ||
-      (typeof state?.title === 'string' && state.title.trim()) ||
-      (Array.isArray(input?.args)
-        ? input.args.filter((entry) => typeof entry === 'string').join(' ')
-        : undefined);
+    const stateError = state?.error;
+    const errorText =
+      typeof stateError === 'string'
+        ? stateError
+        : stateError !== undefined
+          ? formatToolValue(stateError)
+          : undefined;
 
-    if (tool === 'bash') {
-      return {
-        content: outputText ?? '',
-        path,
-        isWrite: false,
-        callId,
-        toolStatus: status,
-        toolName: tool,
-        toolTitle: toolTitle && toolTitle.trim() ? toolTitle : undefined,
-      };
-    }
+    let content = outputText ?? errorText ?? '';
+    let path: string | undefined;
+    let toolTitle: string | undefined;
+    let lang: string | undefined;
 
-    if (tool === 'glob') {
-      const stateError = state?.error;
-      const errorText =
-        typeof stateError === 'string'
-          ? stateError
-          : stateError !== undefined
-            ? formatToolValue(stateError)
-            : undefined;
-      return {
-        content: outputText ?? errorText ?? '',
-        path,
-        isWrite: false,
-        callId,
-        toolStatus: status,
-        toolName: tool,
-        toolTitle: formatGlobToolTitle(input),
-      };
-    }
-
-    const blocks: string[] = [];
-    const inputText = formatToolValue(input ?? {});
-    blocks.push('input:');
-    blocks.push(inputText);
-
-    if (output !== undefined) {
-      const outputValue = outputText ?? '';
-      if (tool === 'read' && typeof outputValue === 'string') {
-        const body = extractFileBodyFromReadOutput(outputValue);
-        if (body) {
-          return {
-            content: body,
-            path,
-            isWrite: false,
-            callId,
-            toolStatus: status,
-            toolName: tool,
-          };
+    switch (tool) {
+      case 'bash': {
+        content = formatBashToolContent(input, outputText ?? errorText ?? '', status);
+        path = undefined;
+        toolTitle = formatBashToolTitle(input, state);
+        lang = 'shellscript';
+        break;
+      }
+      case 'read': {
+        path = typeof input?.filePath === 'string' ? input.filePath : undefined;
+        toolTitle = formatReadLikeToolTitle(input);
+        if (outputText) content = extractFileBodyFromReadOutput(outputText) ?? outputText;
+        lang = guessLanguage(path);
+        break;
+      }
+      case 'grep': {
+        path = typeof input?.path === 'string' ? input.path : undefined;
+        toolTitle = formatGlobToolTitle(input);
+        if (outputText) content = outputText;
+        lang = 'text';
+        break;
+      }
+      case 'glob': {
+        path = typeof input?.path === 'string' ? input.path : undefined;
+        toolTitle = formatGlobToolTitle(input);
+        lang = 'text';
+        break;
+      }
+      case 'list': {
+        path = typeof input?.path === 'string' ? input.path : undefined;
+        toolTitle = formatListToolTitle(input);
+        lang = 'text';
+        break;
+      }
+      case 'webfetch': {
+        path = undefined;
+        toolTitle = formatWebfetchToolTitle(input);
+        const format = typeof input?.format === 'string' ? input.format : 'markdown';
+        lang = format === 'html' ? 'html' : format === 'text' ? 'text' : 'markdown';
+        break;
+      }
+      case 'websearch':
+      case 'codesearch': {
+        path = undefined;
+        toolTitle = formatQueryToolTitle(input);
+        lang = 'markdown';
+        break;
+      }
+      case 'task': {
+        path = undefined;
+        toolTitle = typeof input?.description === 'string' ? input.description : undefined;
+        content = formatTaskToolOutput(content);
+        lang = 'markdown';
+        break;
+      }
+      case 'batch': {
+        path = undefined;
+        toolTitle = 'Batch execution';
+        lang = 'text';
+        break;
+      }
+      case 'write': {
+        path = typeof input?.filePath === 'string' ? input.filePath : undefined;
+        toolTitle = formatReadLikeToolTitle(input);
+        lang = 'text';
+        break;
+      }
+      case 'edit': {
+        path = typeof input?.filePath === 'string' ? input.filePath : undefined;
+        toolTitle = formatReadLikeToolTitle(input);
+        const diff = typeof metadata?.diff === 'string' ? metadata.diff : '';
+        if (diff.trim()) {
+          content = diff;
+          lang = 'diff';
+        } else {
+          lang = 'text';
         }
+        break;
       }
-      if (tool === 'grep' && typeof outputValue === 'string') {
-        return {
-          content: extractBodyFromGrepOutput(outputValue),
-          path,
-          isWrite: false,
-          callId,
-          toolStatus: status,
-          toolName: tool,
-        };
+      case 'multiedit': {
+        path = typeof input?.filePath === 'string' ? input.filePath : undefined;
+        toolTitle = formatReadLikeToolTitle(input);
+        const results = Array.isArray(metadata?.results) ? metadata.results : [];
+        const diffs = results
+          .map((item) => {
+            if (!item || typeof item !== 'object') return null;
+            const diff = (item as Record<string, unknown>).diff;
+            return typeof diff === 'string' && diff.trim() ? diff : null;
+          })
+          .filter((item): item is string => Boolean(item));
+        if (diffs.length > 0) {
+          content = diffs.join('\n\n');
+          lang = 'diff';
+        } else {
+          lang = 'text';
+        }
+        break;
       }
-      blocks.push('output:');
-      blocks.push(outputValue);
+      case 'plan_enter':
+      case 'plan_exit': {
+        path = undefined;
+        toolTitle = typeof state?.title === 'string' ? state.title : undefined;
+        lang = 'text';
+        break;
+      }
+      default:
+        return null;
     }
 
-    const content = blocks.join('\n');
-    return { content, path, isWrite: false, callId, toolStatus: status, toolName: tool };
+    if (!content.trim() && status === 'running') return null;
+    if (!content.trim() && status !== 'running') content = errorText ?? outputText ?? '';
+
+    return {
+      content,
+      path,
+      isWrite: tool === 'write' || tool === 'edit' || tool === 'multiedit',
+      callId,
+      toolStatus: status,
+      toolName: tool,
+      toolTitle: toolTitle?.trim() ? toolTitle.trim() : undefined,
+      lang,
+    };
   }
   const type =
     record.type ??
@@ -5283,51 +5504,32 @@ function upsertToolEntry(
     toolStatus?: string;
     toolName?: string;
     toolTitle?: string;
+    lang?: string;
   },
   eventType: string,
   langOverride?: string,
 ) {
+  if (entry.toolStatus === 'pending') return;
+
   if (entry.callId && entry.toolStatus) {
-    if (entry.toolStatus === 'running' || entry.toolStatus === 'pending')
-      runningToolIds.add(entry.callId);
+    if (entry.toolStatus === 'running') runningToolIds.add(entry.callId);
     else runningToolIds.delete(entry.callId);
   }
 
-  if (entry.toolName === 'apply_patch' && entry.toolStatus && entry.toolStatus !== 'running') {
-    const existingIndex = entry.callId ? toolIndexByCallId.get(entry.callId) : undefined;
-    if (existingIndex !== undefined) {
-      const existing = queue.value[existingIndex];
-      if (existing) {
-        const time = Date.now();
-        const nextExpiresAt = time + TOOL_COMPLETE_TTL_MS;
-        queue.value.splice(existingIndex, 1, {
-          ...existing,
-          time,
-          expiresAt: Math.max(existing.expiresAt, nextExpiresAt),
-          toolStatus: entry.toolStatus,
-        });
-        scheduleToolScrollAnimation(
-          existing.toolKey ?? entry.callId ?? `tool:apply_patch:${time}`,
-        );
-      }
+  if (!entry.content.trim() && entry.toolStatus !== 'running') return;
+
+  const resolveExpiry = (status: string | undefined, time: number, fallback: number) => {
+    if (status === 'running') return Number.MAX_SAFE_INTEGER;
+    if (status === 'completed' || status === 'error' || status === 'cancelled') {
+      return Math.max(fallback, time + TOOL_COMPLETE_TTL_MS);
     }
-    return;
-  }
-  if (entry.toolName === 'read' && entry.toolStatus && entry.toolStatus !== 'completed') {
-    return;
-  }
-  if (
-    entry.toolName === 'glob' &&
-    entry.toolStatus &&
-    entry.toolStatus !== 'completed' &&
-    entry.toolStatus !== 'error'
-  ) {
-    return;
-  }
+    if (status === 'pending') return Math.max(fallback, time + TOOL_PENDING_TTL_MS);
+    return fallback;
+  };
+
   const isBashTool = entry.toolName === 'bash';
   const displayPath = resolveWorktreeRelativePath(entry.path);
-  const hideHeader =
-    entry.toolName === 'grep' || entry.toolName === 'apply_patch' || entry.toolName === 'glob';
+  const hideHeader = Boolean(entry.toolName);
   const header = isBashTool || hideHeader
     ? ''
     : displayPath
@@ -5340,19 +5542,10 @@ function upsertToolEntry(
   const scrollDistance = 0;
   const scrollDuration = 0;
   const defaultExpiry = time + Math.ceil((scrollDuration || 0) * 1000 + TOOL_SCROLL_HOLD_MS);
-  const isToolPending = entry.toolStatus === 'pending';
-  const isToolRunning = entry.toolStatus === 'running';
-  const isToolFinished = Boolean(entry.toolStatus && !isToolPending && !isToolRunning);
-  const toolTtlMs = isToolPending
-    ? TOOL_PENDING_TTL_MS
-    : isToolRunning
-      ? TOOL_RUNNING_TTL_MS
-      : isToolFinished
-        ? TOOL_COMPLETE_TTL_MS
-        : 0;
-  const expiresAt = toolTtlMs > 0 ? Math.max(defaultExpiry, time + toolTtlMs) : defaultExpiry;
+  const expiresAt = resolveExpiry(entry.toolStatus, time, defaultExpiry);
   const lang =
     langOverride ??
+    entry.lang ??
     (detectDiffLike(entry.content, entry.path) ? 'diff' : guessLanguage(entry.path, eventType));
 
   if (entry.callId) {
@@ -5360,28 +5553,44 @@ function upsertToolEntry(
     if (existingIndex !== undefined) {
       const existing = queue.value[existingIndex];
       if (existing) {
+        const nextPath = entry.path ?? existing.path;
+        const nextDisplayPath = resolveWorktreeRelativePath(nextPath);
+        const nextHeader = isBashTool || hideHeader
+          ? ''
+          : nextDisplayPath
+            ? `# ${nextDisplayPath}\n\n`
+            : eventType !== 'message'
+              ? `# ${eventType}\n\n`
+              : '';
+        const nextContent = entry.content.trim().length > 0 ? entry.content : existing.content;
+        const nextLang =
+          langOverride ??
+          entry.lang ??
+          existing.toolLang ??
+          (detectDiffLike(nextContent, nextPath) ? 'diff' : guessLanguage(nextPath, eventType));
         const toolKey =
-          existing.toolKey ?? entry.callId ?? `${entry.path ?? entry.toolName ?? 'tool'}:${time}`;
-        const nextExpiresAt =
-          toolTtlMs > 0 ? Math.max(defaultExpiry, time + toolTtlMs) : defaultExpiry;
+          existing.toolKey ?? entry.callId ?? `${nextPath ?? entry.toolName ?? 'tool'}:${time}`;
+        const nextText = `${nextHeader}${nextContent}`;
+        const nextExpiresAt = resolveExpiry(entry.toolStatus, time, defaultExpiry);
         queue.value.splice(existingIndex, 1, {
           ...existing,
           time,
           expiresAt: nextExpiresAt,
-          header,
-          path: entry.path,
+          header: nextHeader,
+          path: nextPath,
           toolKey,
-          content: entry.content,
+          content: nextContent,
           scroll: false,
           scrollDistance,
           scrollDuration,
-          html: buildHtml(text, lang),
+          html: buildHtml(nextText, nextLang),
           isWrite: entry.isWrite,
           isMessage: false,
           callId: entry.callId,
           toolStatus: entry.toolStatus,
           toolName: entry.toolName,
           toolTitle: entry.toolTitle ?? existing.toolTitle,
+          toolLang: nextLang,
         });
         toolIndexByCallId.set(entry.callId, existingIndex);
         scheduleToolScrollAnimation(toolKey);
@@ -5411,6 +5620,7 @@ function upsertToolEntry(
     toolStatus: entry.toolStatus,
     toolName: entry.toolName,
     toolTitle: entry.toolTitle,
+    toolLang: lang,
     zIndex: nextWindowZ(),
   });
   if (entry.callId) toolIndexByCallId.set(entry.callId, queue.value.length - 1);
@@ -5658,9 +5868,11 @@ function connect() {
       }
     }
 
-    const patchEvent = extractPatch(payload);
-    if (patchEvent) {
-      upsertToolEntry(patchEvent, e.type, 'diff');
+    const patchEvents = extractPatch(payload);
+    if (patchEvents) {
+      patchEvents.forEach((patchEvent) => {
+        upsertToolEntry(patchEvent, e.type, 'diff');
+      });
       return;
     }
 
@@ -5967,11 +6179,13 @@ onMounted(() => {
       queue.value = queue.value.map((entry) => {
         const text = `${entry.header}${entry.content}`;
         const path = entry.header ? entry.header.trim().replace(/^#\s*/, '') : undefined;
-        const lang = entry.isMessage
-          ? 'markdown'
-          : detectDiffLike(entry.content, path)
-            ? 'diff'
-            : guessLanguage(path);
+        const lang =
+          entry.toolLang ??
+          (entry.isMessage
+            ? 'markdown'
+            : detectDiffLike(entry.content, path)
+              ? 'diff'
+              : guessLanguage(path));
         return {
           ...entry,
           html: buildHtml(text, lang),
