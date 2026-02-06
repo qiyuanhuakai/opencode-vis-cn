@@ -18,8 +18,17 @@ function createUrl(baseUrl: string, path: string, params?: Record<string, QueryV
 }
 
 async function parseJson(response: Response) {
-  const body = (await response.json()) as unknown;
-  return body;
+  if (response.status === 204 || response.status === 205) return null;
+  if (response.headers.get('content-length') === '0') return null;
+
+  const raw = await response.text();
+  if (!raw.trim()) return null;
+
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return raw;
+  }
 }
 
 async function getJson(baseUrl: string, path: string, params?: Record<string, QueryValue>) {
