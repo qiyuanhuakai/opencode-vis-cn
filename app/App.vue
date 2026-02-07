@@ -3112,6 +3112,17 @@ function pickLastUserSelection(messages: Array<Record<string, unknown>>): UserMe
   return null;
 }
 
+function hasStoredComposerDraftForSession(sessionId: string) {
+  const normalizedSessionId = sessionId.trim();
+  if (!normalizedSessionId) return false;
+  const projectId = resolveProjectIdForSession(normalizedSessionId) || selectedProjectId.value;
+  const contextKey = buildComposerContextKey(projectId, normalizedSessionId);
+  if (contextKey) return Boolean(readComposerDraft(contextKey));
+  const suffix = `:${normalizedSessionId}`;
+  const store = readComposerDraftStore();
+  return Object.keys(store).some((key) => key.endsWith(suffix));
+}
+
 async function fetchHistory(sessionId: string, isSubagentMessage = false) {
   if (!sessionId) return;
   const requestId = !isSubagentMessage ? ++primaryHistoryRequestId : 0;
@@ -3129,7 +3140,7 @@ async function fetchHistory(sessionId: string, isSubagentMessage = false) {
       if (selectedSessionId.value !== sessionId) return;
       if (getSelectedWorktreeDirectory() !== requestedDirectory) return;
     }
-    if (!isSubagentMessage) {
+    if (!isSubagentMessage && !hasStoredComposerDraftForSession(sessionId)) {
       const selection = pickLastUserSelection(data);
       if (selection) {
         if (selection.agent) selectedMode.value = selection.agent;
