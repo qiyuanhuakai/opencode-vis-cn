@@ -3144,18 +3144,19 @@ async function fetchHistory(sessionId: string, isSubagentMessage = false) {
       if (selectedSessionId.value !== sessionId) return;
       if (getSelectedWorktreeDirectory() !== requestedDirectory) return;
     }
-    if (!isSubagentMessage && !hasStoredComposerDraftForSession(sessionId)) {
-      const selection = pickLastUserSelection(data);
-      if (selection) {
-        if (selection.agent) selectedMode.value = selection.agent;
-        if (selection.modelId) selectedModel.value = selection.modelId;
-        if (selection.variant) {
-          selectedThinking.value = selection.variant;
-        } else if (selection.agent || selection.modelId) {
-          selectedThinking.value = undefined;
-        }
-      }
-    }
+    // NOTE: Disabled — subagent messages with role=user cause incorrect restoration
+    // if (!isSubagentMessage && !hasStoredComposerDraftForSession(sessionId)) {
+    //   const selection = pickLastUserSelection(data);
+    //   if (selection) {
+    //     if (selection.agent) selectedMode.value = selection.agent;
+    //     if (selection.modelId) selectedModel.value = selection.modelId;
+    //     if (selection.variant) {
+    //       selectedThinking.value = selection.variant;
+    //     } else if (selection.agent || selection.modelId) {
+    //       selectedThinking.value = undefined;
+    //     }
+    //   }
+    // }
     const history = data
       .map((message) => {
         const info = message.info as Record<string, unknown> | undefined;
