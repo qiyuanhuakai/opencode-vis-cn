@@ -9402,8 +9402,19 @@ function connect() {
 
     const patchEvents = extractPatch(payload);
     if (patchEvents) {
-      patchEvents.forEach((patchEvent) => {
-        upsertToolEntry(patchEvent, e.type);
+      patchEvents.forEach((patchEvent, index) => {
+        const callId = patchEvent.callId ?? `apply_patch:${index}`;
+        fw.open(callId, {
+          component: EditContent,
+          props: {
+            status: patchEvent.toolStatus,
+            toolName: patchEvent.toolName,
+            diff: patchEvent.content,
+          },
+          status: patchEvent.toolStatus,
+          title: patchEvent.toolTitle ?? patchEvent.path ?? 'apply_patch',
+          color: toolColor(patchEvent.toolName),
+        });
       });
       return;
     }
