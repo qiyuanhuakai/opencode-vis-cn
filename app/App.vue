@@ -67,40 +67,12 @@
           </div>
           <div ref="toolWindowCanvasEl" class="tool-window-canvas">
             <TransitionGroup appear name="fade">
-              <ToolWindow
-                v-for="q in queue.filter((entry) => !entry.isMessage || entry.isSubagentMessage)"
-                :key="q.permissionId ?? q.questionId ?? q.callId ?? q.messageId ?? q.time"
-                :entry="q"
-                :get-entry-title="getEntryTitle"
-                :resolve-agent-tone="resolveAgentTone"
-                :build-message-key="buildMessageKey"
-                :on-focus-entry="focusTerm"
-                :on-drag-entry="startTermDrag"
-                :on-resize-entry="startTermResize"
-                :on-floating-scroll-entry="handleFloatingScroll"
-                :on-floating-wheel-entry="handleFloatingWheel"
-                :on-rendered-entry="handleToolWindowRendered"
-                :is-permission-submitting="isPermissionSubmitting"
-                :get-permission-error="getPermissionError"
-                :on-permission-reply="handlePermissionReply"
-                :is-question-submitting="isQuestionSubmitting"
-                :get-question-error="getQuestionError"
-                :on-question-reply="handleQuestionReply"
-                :on-question-reject="handleQuestionReject"
-                :theme="shikiTheme"
-              />
-              <FileViewerWindow
-                v-for="q in fileViewerQueue"
-                :key="q.toolKey ?? q.path ?? q.time"
-                :entry="q"
-                :title="getEntryTitle(q)"
-                :on-focus-entry="focusTerm"
-                :on-drag-entry="startTermDrag"
-                :on-resize-entry="startTermResize"
-                :on-floating-scroll-entry="handleFloatingScroll"
-                :on-floating-wheel-entry="handleFloatingWheel"
-                :on-close-entry="closeFileViewer"
-                :theme="shikiTheme"
+              <FloatingWindow
+                v-for="entry in fw.entries.value"
+                :key="entry.key"
+                :entry="entry"
+                @focus="fw.bringToFront(entry.key)"
+                @close="fw.close(entry.key)"
               />
             </TransitionGroup>
           </div>
@@ -169,11 +141,11 @@ import InputPanel from './components/InputPanel.vue';
 import OutputPanel from './components/OutputPanel.vue';
 import ProjectPicker from './components/ProjectPicker.vue';
 import hexdump from '@kikuchan/hexdump';
-import FileViewerWindow from './components/FileViewerWindow.vue';
+import FloatingWindow from './components/FloatingWindow.vue';
 import SidePanel from './components/SidePanel.vue';
-import ToolWindow from './components/ToolWindow.vue';
 import TopPanel from './components/TopPanel.vue';
 import { useOutputPanelFollow } from './composables/useOutputPanelFollow';
+import { useFloatingWindows } from './composables/useFloatingWindows';
 import * as opencodeApi from './utils/opencode';
 import { opencodeTheme, resolveTheme, resolveAgentColor } from './utils/theme';
 
@@ -5584,6 +5556,9 @@ watch(
 function log(..._args: unknown[]) {}
 
 const shikiTheme = ref('github-dark');
+
+const fw = useFloatingWindows();
+
 setInterval(() => {
   const now = Date.now();
   messageIndexById.clear();
