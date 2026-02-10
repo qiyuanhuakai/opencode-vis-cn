@@ -7135,6 +7135,7 @@ function extractFileRead(payload: unknown, eventType: string) {
       }
       case 'read': {
         if (status === 'running') return null;
+        console.log('READ tool outputText:', outputText, 'from state.output:', state?.output);
         const readPath = resolveReadWritePath(input, metadata, state);
         return {
           component: ReadContent,

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import CodeContent from '../CodeContent.vue';
+import { useCodeRender } from '../../utils/useCodeRender';
+import { guessLanguageFromPath } from './utils';
 
 const props = defineProps<{
   input?: Record<string, unknown>;
@@ -11,7 +13,6 @@ const props = defineProps<{
   state?: Record<string, unknown>;
 }>();
 
-// Extract file body from read output: parse <file> tags and strip line numbers
 function extractFileBodyFromReadOutput(output: string) {
   const startTag = '<file>';
   const endTag = '</file>';
@@ -30,7 +31,6 @@ function extractFileBodyFromReadOutput(output: string) {
   return contentLines.join('\n');
 }
 
-// Resolve read/write path from multiple sources
 function resolveReadWritePath(
   input: Record<string, unknown> | undefined,
   metadata: Record<string, unknown> | undefined,
@@ -46,15 +46,6 @@ function resolveReadWritePath(
   return title || undefined;
 }
 
-// Format title: filePath → path
-function formatReadLikeToolTitle(input: Record<string, unknown> | undefined) {
-  const filePath = typeof input?.filePath === 'string' ? input.filePath.trim() : '';
-  if (filePath) return filePath;
-  const path = typeof input?.path === 'string' ? input.path.trim() : '';
-  return path || undefined;
-}
-
-// Resolve read range
 function resolveReadRange(input: Record<string, unknown> | undefined) {
   const offsetValue = input?.offset;
   const limitValue = input?.limit;
@@ -74,6 +65,7 @@ const path = computed(() => {
 });
 
 const displayContent = computed(() => {
+  console.log('Read.vue props.output:', props.output);
   if (!props.output) return '';
   return extractFileBodyFromReadOutput(props.output) ?? props.output;
 });
@@ -82,11 +74,19 @@ const readRange = computed(() => {
   return resolveReadRange(props.input);
 });
 
-const title = computed(() => {
-  return formatReadLikeToolTitle(props.input) || path.value || 'Read';
+const lang = computed(() => {
+  return guessLanguageFromPath(path.value);
 });
+
+const { html: renderedHtml } = useCodeRender(() => ({
+  code: displayContent.value,
+  lang: lang.value,
+  theme: 'github-dark',
+  lineOffset: readRange.value.offset,
+  lineLimit: readRange.value.limit,
+}));
 </script>
 
 <template>
-  <CodeContent :html="displayContent" variant="code" />
+  <CodeContent :html="renderedHtml" variant="code" />
 </template>
