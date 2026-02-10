@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, provide } from 'vue';
+import { ref, computed, provide, watch, nextTick } from 'vue';
 import CodeContent from './CodeContent.vue';
 import { FLOATING_WINDOW_KEY, type FloatingWindowAPI } from '../composables/useFloatingWindow';
 import type { FloatingWindowEntry, useFloatingWindows } from '../composables/useFloatingWindows';
@@ -20,6 +20,18 @@ const bodyEl = ref<HTMLElement>();
 const scrollMode = computed<ScrollMode>(() => props.entry.scroll || 'manual');
 const { showResumeButton, resumeFollow } = useScrollFollow(bodyEl, scrollMode);
 
+watch(
+  () => props.entry.resolvedHtml,
+  () => {
+    const el = bodyEl.value;
+    if (!el) return;
+    const saved = el.scrollTop;
+    nextTick(() => {
+      el.scrollTop = saved;
+    });
+  },
+  { flush: 'pre' },
+);
 
 const api: FloatingWindowAPI = {
   key: props.entry.key,
