@@ -3,6 +3,7 @@ import { ref, computed, provide } from 'vue';
 import CodeContent from './CodeContent.vue';
 import { FLOATING_WINDOW_KEY, type FloatingWindowAPI } from '../composables/useFloatingWindow';
 import type { FloatingWindowEntry, useFloatingWindows } from '../composables/useFloatingWindows';
+import { useScrollFollow, type ScrollMode } from '../composables/useScrollFollow';
 
 const props = defineProps<{
   entry: FloatingWindowEntry;
@@ -16,7 +17,10 @@ const emit = defineEmits<{
 
 const bodyEl = ref<HTMLElement>();
 
-// Provide inject API to child components
+const scrollMode = computed<ScrollMode>(() => props.entry.scroll || 'manual');
+const { showResumeButton, resumeFollow } = useScrollFollow(bodyEl, scrollMode);
+
+
 const api: FloatingWindowAPI = {
   key: props.entry.key,
   content: computed(() => props.entry.content || ''),
@@ -65,9 +69,6 @@ const windowStyle = computed(() => {
 
 const scrollClass = computed(() => {
   return {
-    'scroll-force': props.entry.scroll === 'force',
-    'scroll-follow': props.entry.scroll === 'follow',
-    'scroll-manual': props.entry.scroll === 'manual',
     'scroll-none': props.entry.scroll === 'none',
   };
 });
@@ -165,18 +166,27 @@ function onResizeEnd(e: PointerEvent) {
         @click.stop="onClose"
       >×</button>
     </div>
-    <div 
-      class="floating-window-body" 
-      :class="scrollClass"
-      ref="bodyEl"
-    >
-      <template v-if="entry.component">
-        <component 
-          :is="entry.component" 
-          v-bind="entry.props || {}"
-        />
-      </template>
-      <CodeContent v-else :html="entry.resolvedHtml || entry.content || ''" />
+    <div class="floating-window-body-wrapper">
+      <div 
+        class="floating-window-body" 
+        :class="scrollClass"
+        ref="bodyEl"
+      >
+        <template v-if="entry.component">
+          <component 
+            :is="entry.component" 
+            v-bind="entry.props || {}"
+          />
+        </template>
+        <CodeContent v-else :html="entry.resolvedHtml || entry.content || ''" />
+      </div>
+      <Transition name="fade">
+        <button
+          v-if="showResumeButton"
+          class="follow-resume-btn"
+          @click.stop="resumeFollow"
+        >&#x2193;</button>
+      </Transition>
     </div>
     <div 
       v-if="entry.resizable" 
@@ -240,18 +250,80 @@ function onResizeEnd(e: PointerEvent) {
   opacity: 0.8;
 }
 
-.floating-window-body {
+.floating-window-body-wrapper {
   flex: 1;
-  overflow: auto;
-  padding: 2px 4px;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
 }
 
-.floating-window-body.scroll-force {
-  overflow: hidden;
+.floating-window-body {
+  height: 100%;
+  overflow: auto;
+  padding: 2px 4px;
+  scrollbar-width: none;
+}
+
+.floating-window-body::-webkit-scrollbar {
+  display: none;
+}
+
+.floating-window:hover .floating-window-body {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+}
+
+.floating-window:hover .floating-window-body::-webkit-scrollbar {
+  display: block;
+  width: 6px;
+}
+
+.floating-window:hover .floating-window-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.floating-window:hover .floating-window-body::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .floating-window-body.scroll-none {
   overflow: hidden;
+}
+
+.follow-resume-btn {
+  position: absolute;
+  bottom: 6px;
+  right: 14px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(30, 34, 42, 0.85);
+  color: #94a3b8;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+  transition: background 0.15s, color 0.15s;
+}
+
+.follow-resume-btn:hover {
+  background: rgba(50, 58, 72, 0.95);
+  color: #e2e8f0;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.15s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 .floating-window-resizer {
