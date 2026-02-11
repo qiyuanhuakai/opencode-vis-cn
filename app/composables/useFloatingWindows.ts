@@ -122,18 +122,32 @@ export function useFloatingWindows() {
     };
   }
 
-  // GC timer
-  const gcInterval = setInterval(() => {
-    const now = Date.now();
-    for (const [key, entry] of entriesMap) {
-      if (entry.expiresAt < now) {
-        close(key);
-      }
+  // Per-window expiry timers
+  const timerMap = new Map<string, ReturnType<typeof setTimeout>>();
+
+  function scheduleExpiry(key: string, expiresAt: number): void {
+    // Skip scheduling for permanent windows
+    if (expiresAt >= Number.MAX_SAFE_INTEGER) return;
+
+    // Clear existing timer if present
+    const existingTimer = timerMap.get(key);
+    if (existingTimer !== undefined) {
+      clearTimeout(existingTimer);
     }
-  }, 1000);
+
+    const delay = Math.max(0, expiresAt - Date.now());
+    const timerId = setTimeout(() => {
+      timerMap.delete(key);
+      close(key);
+    }, delay);
+    timerMap.set(key, timerId);
+  }
 
   onUnmounted(() => {
-    clearInterval(gcInterval);
+    for (const timerId of timerMap.values()) {
+      clearTimeout(timerId);
+    }
+    timerMap.clear();
   });
 
   async function open(key: string, opts: Partial<FloatingWindowEntry>): Promise<void> {
@@ -203,6 +217,8 @@ export function useFloatingWindows() {
 
     entriesMap.set(key, sanitizeEntry(merged));
 
+    scheduleExpiry(key, merged.expiresAt);
+
     // Execute afterOpen hook
     if (merged.afterOpen) {
       setTimeout(() => {
@@ -230,6 +246,10 @@ export function useFloatingWindows() {
     }
 
     entriesMap.set(key, sanitizeEntry(merged));
+
+    if (partialOpts.status === 'completed' || partialOpts.status === 'error') {
+      scheduleExpiry(key, merged.expiresAt);
+    }
   }
 
   async function setContent(key: string, text: string, lang?: string): Promise<void> {
@@ -283,6 +303,7 @@ export function useFloatingWindows() {
       entry.status = status;
       if (status === 'completed' || status === 'error') {
         entry.expiresAt = Date.now() + TOOL_COMPLETED_TTL_MS;
+        scheduleExpiry(key, entry.expiresAt);
       }
     }
   }
@@ -298,12 +319,19 @@ export function useFloatingWindows() {
     const entry = entriesMap.get(key);
     if (entry) {
       entry.expiresAt = Date.now() + ms;
+      scheduleExpiry(key, entry.expiresAt);
     }
   }
 
   async function close(key: string): Promise<void> {
     const entry = entriesMap.get(key);
     if (!entry) return;
+
+    const timerId = timerMap.get(key);
+    if (timerId !== undefined) {
+      clearTimeout(timerId);
+      timerMap.delete(key);
+    }
 
     if (entry.beforeClose) {
       const el = document.querySelector(`[data-floating-key="${key}"]`);
@@ -318,6 +346,10 @@ export function useFloatingWindows() {
   }
 
   function closeAll(): void {
+    for (const timerId of timerMap.values()) {
+      clearTimeout(timerId);
+    }
+    timerMap.clear();
     for (const key of [...entriesMap.keys()]) {
       close(key);
     }
