@@ -18,7 +18,7 @@
             </div>
           </template>
         </Dropdown>
-        <button type="button" class="control-button" @click="$emit('open-directory')">Open</button>
+        <button type="button" class="control-button" @click="$emit('open-directory')"><Icon icon="lucide:folder-open" :width="12" :height="12" /> Open</button>
       </div>
 
       <div class="top-field">
@@ -68,7 +68,7 @@
           :disabled="!baseWorktree"
           @click="$emit('create-worktree')"
         >
-          Add
+          <Icon icon="lucide:plus" :width="12" :height="12" /> Add
         </button>
       </div>
 
@@ -99,7 +99,7 @@
             </div>
           </template>
         </Dropdown>
-        <button type="button" class="control-button" @click="$emit('new-session')">New</button>
+        <button type="button" class="control-button" @click="$emit('new-session')"><Icon icon="lucide:plus" :width="12" :height="12" /> New</button>
       </div>
     </div>
   </div>
@@ -107,6 +107,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue';
+import { Icon } from '@iconify/vue';
 import Dropdown from './Dropdown.vue';
 import DropdownItem from './Dropdown/Item.vue';
 
@@ -395,6 +396,9 @@ function handleSessionDelete(id: string, close?: () => void) {
   padding: 6px 12px;
   font-size: 12px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .control-button:disabled {

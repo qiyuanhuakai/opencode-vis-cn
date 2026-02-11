@@ -18,7 +18,7 @@
         <slot name="label">
           <span class="ui-dropdown-label">{{ displayLabel }}</span>
         </slot>
-        <span class="ui-dropdown-icon">{{ props.menuIcon ?? 'v' }}</span>
+        <Icon class="ui-dropdown-icon" :icon="props.menuIcon ?? 'lucide:chevron-down'" :width="12" :height="12" />
       </button>
     </slot>
     <div
@@ -48,6 +48,7 @@ import {
   watch,
   type StyleValue,
 } from 'vue';
+import { Icon } from '@iconify/vue';
 
 export interface DropdownAPI {
   select: (item: unknown) => void;
@@ -303,9 +304,10 @@ provide('x-selectable', api);
 }
 
 .ui-dropdown-icon {
-  font-size: 12px;
   opacity: 0.7;
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
 }
 
 .ui-dropdown-menu {

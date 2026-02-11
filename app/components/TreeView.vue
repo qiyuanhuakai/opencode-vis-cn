@@ -49,7 +49,7 @@
           :aria-label="isExpanded(row.node.path) ? 'Collapse directory' : 'Expand directory'"
           @click.stop="emit('toggle-dir', row.node.path)"
         >
-          {{ isExpanded(row.node.path) ? '▾' : '▸' }}
+          <Icon :icon="isExpanded(row.node.path) ? 'lucide:chevron-down' : 'lucide:chevron-right'" :width="14" :height="14" />
         </button>
         <span v-else class="tree-toggle tree-toggle-spacer"></span>
         <span class="tree-icon">{{ row.node.type === 'directory' ? '📁' : '📄' }}</span>
@@ -73,6 +73,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { Icon } from '@iconify/vue';
 
 export type TreeNode = {
   name: string;
@@ -348,6 +349,9 @@ function onRowDoubleClick(row: { node: TreeNode }) {
   width: 16px;
   padding: 0;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .tree-toggle-spacer {

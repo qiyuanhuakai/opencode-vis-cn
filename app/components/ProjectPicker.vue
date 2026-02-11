@@ -3,7 +3,7 @@
     <div class="modal" role="dialog" aria-modal="true" tabindex="0" @keydown="handleKeydown">
       <header class="modal-header">
         <div class="modal-title">Select folder</div>
-        <button type="button" class="control-button" @click="$emit('close')">Close</button>
+        <button type="button" class="control-button" @click="$emit('close')"><Icon icon="lucide:x" :width="12" :height="12" /> Close</button>
       </header>
       <div class="modal-body">
         <div class="field-row">
@@ -41,6 +41,7 @@
 
 <script setup lang="ts">
 import { computed, customRef, nextTick, ref, watch } from 'vue';
+import { Icon } from '@iconify/vue';
 
 type BasePath = { id: string; label: string; path: string };
 type FileNode = {
@@ -555,5 +556,8 @@ function buildSearchResult(path: string, label: string, match?: string): SearchR
   padding: 6px 12px;
   font-size: 12px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 </style>

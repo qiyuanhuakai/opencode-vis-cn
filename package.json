@@ -16,6 +16,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
+    "@iconify/vue": "^5.0.0",
     "@kikuchan/hexdump": "0.1.0-alpha.9",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^6.0.0",

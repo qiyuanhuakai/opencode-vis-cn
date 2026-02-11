@@ -38,7 +38,7 @@
             class="attachment-remove"
             @click="$emit('remove-attachment', item.id)"
           >
-            Remove
+            <Icon icon="lucide:x" :width="12" :height="12" />
           </button>
         </div>
       </div>
@@ -160,7 +160,7 @@
         :disabled="props.canAttach === false"
         @click="triggerFileInput"
       >
-        Attach
+        <Icon icon="lucide:paperclip" :width="12" :height="12" /> Attach
       </button>
       <button
         v-if="isThinking"
@@ -178,7 +178,7 @@
         :disabled="!canSend"
         @click="$emit('send')"
       >
-        Send
+        <Icon icon="lucide:send" :width="12" :height="12" /> Send
       </button>
     </div>
   </div>
@@ -186,6 +186,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
+import { Icon } from '@iconify/vue';
 import Dropdown from './Dropdown.vue';
 import DropdownItem from './Dropdown/Item.vue';
 type ModelOption = {
@@ -841,9 +842,12 @@ const inputMessageStyle = computed(() => {
   color: #e2e8f0;
   border: 1px solid #334155;
   border-radius: 6px;
-  padding: 4px 6px;
+  padding: 4px;
   font-size: 10px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .command-popup {
@@ -894,6 +898,9 @@ const inputMessageStyle = computed(() => {
   height: 32px;
   font-size: 12px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .send-button {
