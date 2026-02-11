@@ -1601,14 +1601,14 @@ function syncSessionStatuses(entries: [string, SessionStatusType][], projectId?:
   const apiBusyKeys = new Set<string>();
   let didUpdate = false;
 
-  // Apply API entries: merge missing, and collect keys reported as busy
+  // Apply API entries: always update status, and collect keys reported as busy
   entries.forEach(([sessionId, status]) => {
     if (!sessionId) return;
     const key = buildSessionStatusKeyForSession(sessionId, projectId);
     if (!key) return;
     apiBusyKeys.add(key);
     const current = sessionStatusByKey.get(key);
-    if (current === undefined) {
+    if (current !== status) {
       sessionStatusByKey.set(key, status);
       didUpdate = true;
     }
