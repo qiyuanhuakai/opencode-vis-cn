@@ -554,6 +554,12 @@ const groupedModelOptions = computed(() => {
   return Array.from(grouped.values());
 });
 
+function focus() {
+  textareaRef.value?.focus();
+}
+
+defineExpose({ focus });
+
 const inputMessageStyle = computed(() => {
   if (!props.agentColor) return { borderColor: '#334155' };
   const color = props.agentColor;

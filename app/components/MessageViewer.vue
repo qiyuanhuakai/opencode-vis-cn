@@ -1,7 +1,6 @@
 <template>
-  <div class="message-viewer">
-    <div v-if="state.html" class="message-content" v-html="state.html"></div>
-    <div v-else-if="state.error" class="message-loading">{{ state.error }}</div>
+  <div v-if="state.html" class="message-viewer">
+    <div class="message-content" v-html="state.html"></div>
   </div>
 </template>
 
@@ -79,12 +78,6 @@ onBeforeUnmount(() => {
   line-height: inherit;
   color: inherit;
   min-height: 1.2em;
-}
-
-.message-loading {
-  margin: auto;
-  color: rgba(148, 163, 184, 0.9);
-  font-size: 12px;
 }
 
 .message-content {

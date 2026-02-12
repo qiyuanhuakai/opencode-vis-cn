@@ -521,8 +521,6 @@ const messageDiffsByKey = reactive(new Map<string, Array<MessageDiffEntry>>());
 const reasoningTitleBySessionId = new Map<string, string>();
 type SessionStatusType = 'busy' | 'idle' | 'retry';
 
-const sessionStatusByKey = new Map<string, SessionStatusType>();
-const sessionStatusVersion = ref(0);
 const reasoningCloseTimers = new Map<string, number>();
 const lastReasoningMessageIdByKey = new Map<string, string>();
 const messageAttachmentsById = new Map<string, MessageAttachment[]>();
@@ -586,7 +584,7 @@ const permissionSendingById = ref<Record<string, boolean>>({});
 const permissionErrorById = ref<Record<string, string>>({});
 const questionSendingById = ref<Record<string, boolean>>({});
 const questionErrorById = ref<Record<string, string>>({});
-const pendingWorktreeMetaByDir = new Map<string, VcsInfo>();
+
 const sidePanelCollapsed = ref(readSidePanelCollapsed());
 const sidePanelActiveTab = ref(readSidePanelTab());
 const todosBySessionId = ref<Record<string, TodoItem[]>>({});
@@ -683,13 +681,27 @@ type CommandInfo = {
   hints?: string[];
 };
 
-const projects = ref<ProjectInfo[]>([]);
-const worktrees = ref<string[]>([]);
-const worktreeMetaByDir = ref<Record<string, VcsInfo>>({});
+const projects = computed<ProjectInfo[]>(() => {
+  void sessionGraphVersion.value;
+  return sessionGraphStore.getProjects() as ProjectInfo[];
+});
+const worktrees = computed<string[]>(() => {
+  void sessionGraphVersion.value;
+  const pd = projectDirectory.value?.trim();
+  if (!pd) return [];
+  return sessionGraphStore.getWorktrees(pd);
+});
+const worktreeMetaByDir = computed<Record<string, VcsInfo>>(() => {
+  void sessionGraphVersion.value;
+  const result: Record<string, VcsInfo> = {};
+  worktrees.value.forEach((dir) => {
+    const info = sessionGraphStore.getVcsInfo(dir);
+    if (info) result[dir] = info;
+  });
+  return result;
+});
 const worktreeMetaRequestIdByDir = new Map<string, number>();
 let worktreeMetaRequestId = 0;
-const sessions = ref<SessionInfo[]>([]);
-const sessionParentById = shallowRef(new Map<string, string | undefined>());
 const sessionGraphStore = createSessionGraphStore();
 const sessionGraphVersion = ref(0);
 const bootstrapReady = ref(false);
@@ -777,6 +789,31 @@ const baseWorktreeOptions = computed(() => {
   return Array.from(unique);
 });
 
+const effectiveProjectId = computed(() => {
+  void sessionGraphVersion.value;
+  const selected = selectedProjectId.value.trim();
+  if (selected) return selected;
+  const directory = activeDirectory.value.trim();
+  if (!directory) return '';
+  return resolveProjectIdForDirectorySelection(directory || undefined);
+});
+
+const sessions = computed(() => {
+  void sessionGraphVersion.value;
+  const directory = activeDirectory.value.trim();
+  const projectID = effectiveProjectId.value;
+  return sessionGraphStore.getRootSessions({
+    projectID: projectID || undefined,
+    directory: directory || undefined,
+  }) as SessionInfo[];
+});
+
+const sessionParentById = computed(() => {
+  void sessionGraphVersion.value;
+  const projectID = effectiveProjectId.value;
+  return sessionGraphStore.getParentMap(projectID || undefined);
+});
+
 const filteredSessions = computed(() =>
   sessions.value.filter((session) => {
     if (session.parentID) return false;
@@ -854,8 +891,7 @@ const canSend = computed(() =>
 const busyDescendantSessionIds = computed(() => {
   const allowed = allowedSessionIds.value;
   const selected = selectedSessionId.value;
-  const tick = sessionStatusVersion.value;
-  if (tick < 0) return [] as string[];
+  void sessionGraphVersion.value;
   const ids: string[] = [];
   for (const sid of allowed) {
     if (sid === selected) continue;
@@ -867,8 +903,7 @@ const busyDescendantSessionIds = computed(() => {
 
 const isThinking = computed(() => {
   const selected = selectedSessionId.value;
-  const tick = sessionStatusVersion.value;
-  void tick;
+  void sessionGraphVersion.value;
   const ownStatus = selected ? getSessionStatus(selected) : undefined;
   return Boolean(
     ownStatus === 'busy' ||
@@ -1533,39 +1568,9 @@ function syncNextWindowZIndex(entries: FileReadEntry[] = queue.value) {
   nextWindowZIndex = maxZ;
 }
 
-function buildSessionStatusKey(projectId: string, sessionId: string) {
-  const normalizedProjectId = projectId.trim();
-  return normalizedProjectId ? `${normalizedProjectId}:${sessionId}` : '';
-}
-
-function resolveProjectIdForStatus(sessionId: string, projectId?: string) {
-  const normalizedProjectId = projectId?.trim();
-  if (normalizedProjectId) return normalizedProjectId;
-  const resolved = resolveProjectIdForSession(sessionId);
-  if (resolved) return resolved;
-  if (selectedProjectId.value) return selectedProjectId.value;
-  return '';
-}
-
-function buildSessionStatusKeyForSession(sessionId: string, projectId?: string) {
-  if (!sessionId) return '';
-  const resolvedProjectId = resolveProjectIdForStatus(sessionId, projectId);
-  if (!resolvedProjectId) return '';
-  return buildSessionStatusKey(resolvedProjectId, sessionId);
-}
-
 function getSessionStatus(sessionId: string, projectId?: string) {
   if (!sessionId) return undefined;
-  const key = buildSessionStatusKeyForSession(sessionId, projectId);
-  if (key) {
-    const status = sessionStatusByKey.get(key);
-    if (status !== undefined) return status;
-  }
-  const suffix = `:${sessionId}`;
-  for (const [entryKey, status] of sessionStatusByKey) {
-    if (entryKey.endsWith(suffix)) return status;
-  }
-  return undefined;
+  return sessionGraphStore.getStatus(sessionId, projectId);
 }
 
 function getDescendantSessionIds(rootId: string): string[] {
@@ -1596,9 +1601,8 @@ function hasAnyBusyDescendant(rootId: string, projectId?: string): boolean {
 }
 
 const sessionStatusByIdRecord = computed<Record<string, SessionStatusType>>(() => {
-  const tick = sessionStatusVersion.value;
+  void sessionGraphVersion.value;
   const next: Record<string, SessionStatusType> = {};
-  if (tick < 0) return next;
   sessions.value.forEach((session) => {
     if (session.parentID) return;
     const ownStatus = getSessionStatus(session.id, session.projectID);
@@ -1616,66 +1620,19 @@ const sessionStatusByIdRecord = computed<Record<string, SessionStatusType>>(() =
 function setSessionStatus(sessionId: string, status: SessionStatusType, projectId?: string) {
   if (!sessionId) return;
   sessionGraphStore.setStatus(sessionId, status, projectId);
-  const key = buildSessionStatusKeyForSession(sessionId, projectId);
-  if (!key) return;
-  if (sessionStatusByKey.get(key) === status) return;
-  sessionStatusByKey.set(key, status);
-  sessionStatusVersion.value += 1;
+  markSessionGraphChanged();
 }
 
 function deleteSessionStatus(sessionId: string, projectId?: string) {
   if (!sessionId) return;
-  const keysToDelete = new Set<string>();
-  const key = buildSessionStatusKeyForSession(sessionId, projectId);
-  if (key) keysToDelete.add(key);
-  const suffix = `:${sessionId}`;
-  sessionStatusByKey.forEach((_, entryKey) => {
-    if (entryKey.endsWith(suffix)) keysToDelete.add(entryKey);
-  });
-  if (keysToDelete.size === 0) return;
-  keysToDelete.forEach((entryKey) => {
-    sessionStatusByKey.delete(entryKey);
-  });
-  sessionStatusVersion.value += 1;
+  sessionGraphStore.setStatus(sessionId, 'idle', projectId);
+  markSessionGraphChanged();
 }
 
-/**
- * Sync local session statuses with the API response.
- * - For sessions unknown locally (no entry): set the status from the API (busy/idle/retry).
- * - For sessions that are locally busy/retry but NOT present in the API response: demote to idle.
- * The API only returns busy sessions, so absence means the session is idle.
- */
 function syncSessionStatuses(entries: [string, SessionStatusType][], projectId?: string) {
   if (!projectId) return;
   sessionGraphStore.syncStatusesForProject(projectId, entries);
-  const apiBusyKeys = new Set<string>();
-  let didUpdate = false;
-
-  // Apply API entries: merge missing, and collect keys reported as busy
-  entries.forEach(([sessionId, status]) => {
-    if (!sessionId) return;
-    const key = buildSessionStatusKeyForSession(sessionId, projectId);
-    if (!key) return;
-    apiBusyKeys.add(key);
-    const current = sessionStatusByKey.get(key);
-    if (current === undefined) {
-      sessionStatusByKey.set(key, status);
-      didUpdate = true;
-    }
-  });
-
-  // Demote locally busy/retry sessions that are NOT in the API response to idle.
-  // The API only returns busy sessions, so absence means idle.
-  const prefix = `${projectId}:`;
-  sessionStatusByKey.forEach((status, key) => {
-    if (!key.startsWith(prefix)) return;
-    if (status !== 'busy' && status !== 'retry') return;
-    if (apiBusyKeys.has(key)) return;
-    sessionStatusByKey.set(key, 'idle');
-    didUpdate = true;
-  });
-
-  if (didUpdate) sessionStatusVersion.value += 1;
+  markSessionGraphChanged();
 }
 
 function nextWindowZ() {
@@ -2429,30 +2386,9 @@ function scheduleToolScrollAnimation(toolKey: string) {
   });
 }
 
-function syncVisibleSessionsFromGraph() {
-  const directory = activeDirectory.value.trim();
-  const projectID =
-    selectedProjectId.value
-    || resolveProjectIdForDirectorySelection(directory || undefined)
-    || sessionGraphStore.resolveProjectIDForDirectory(directory);
-  if (!selectedProjectId.value && projectID) selectedProjectId.value = projectID;
-  sessions.value = sessionGraphStore.getRootSessions({
-    projectID: projectID || undefined,
-    directory: directory || undefined,
-  }) as SessionInfo[];
-  sessionParentById.value = sessionGraphStore.getParentMap(projectID || undefined);
+function markSessionGraphChanged() {
   sessionGraphVersion.value = sessionGraphStore.getVersion();
   pruneOrphanedComposerDrafts();
-}
-
-function registerProjectDirectories() {
-  projects.value.forEach((project) => {
-    const dir = project.worktree?.trim();
-    if (dir) sessionGraphStore.setProjectDirectory(project.id, dir);
-    projectSessionDirectories(project).forEach((candidate) => {
-      sessionGraphStore.addDirectoryCandidate(candidate, project.id);
-    });
-  });
 }
 
 function resolveProjectIdForDirectorySelection(directory?: string) {
@@ -2464,20 +2400,24 @@ function resolveProjectIdForDirectorySelection(directory?: string) {
 function resolveProjectDirectoryForProjectId(projectId?: string) {
   const normalized = projectId?.trim() || '';
   if (!normalized) return '';
-  const fromGraph = sessionGraphStore.getDirectoriesForProject(normalized)[0] ?? '';
-  if (fromGraph) return fromGraph;
-  const fromProjects = projects.value.find((project) => project.id === normalized)?.worktree?.trim() ?? '';
-  return fromProjects;
+  return sessionGraphStore.getProjectRootForProject(normalized);
 }
 
 function setSessions(list: SessionInfo[], directoryContext?: string) {
   const next = Array.isArray(list) ? list : [];
   const contextDirectory = (directoryContext ?? activeDirectory.value ?? '').trim();
+  const projectIdsFromScope = new Set<string>();
   next.forEach((session) => {
+    if (session.projectID) projectIdsFromScope.add(session.projectID);
     if (session.projectID && session.directory) {
       sessionGraphStore.addDirectoryCandidate(session.directory, session.projectID);
     }
   });
+  if (contextDirectory) {
+    projectIdsFromScope.forEach((projectID) => {
+      sessionGraphStore.setProjectDirectory(projectID, contextDirectory);
+    });
+  }
   const projectID =
     selectedProjectId.value
     || resolveProjectIdForDirectorySelection(contextDirectory || undefined)
@@ -2487,12 +2427,11 @@ function setSessions(list: SessionInfo[], directoryContext?: string) {
     directoryHint: contextDirectory || undefined,
     retention: 'persistent',
   });
-  syncVisibleSessionsFromGraph();
+  markSessionGraphChanged();
 }
 
 function clearSessions() {
-  sessions.value = [];
-  sessionParentById.value = sessionGraphStore.getParentMap(selectedProjectId.value || undefined);
+  selectedSessionId.value = '';
 }
 
 function upsertSessionGraph(info: SessionInfo) {
@@ -2501,12 +2440,12 @@ function upsertSessionGraph(info: SessionInfo) {
     directoryHint: activeDirectory.value || undefined,
     retention: info.parentID ? 'ephemeral' : 'persistent',
   });
-  syncVisibleSessionsFromGraph();
+  markSessionGraphChanged();
 }
 
 function removeSessionFromGraph(sessionId: string) {
   sessionGraphStore.removeSession(sessionId, selectedProjectId.value || undefined);
-  syncVisibleSessionsFromGraph();
+  markSessionGraphChanged();
 }
 
 /**
@@ -2544,7 +2483,7 @@ async function fetchSessionChildren(rootSessionId: string, directory?: string, p
         retention: 'ephemeral',
       });
     }
-    syncVisibleSessionsFromGraph();
+    markSessionGraphChanged();
   } catch (error) {
     // Non-critical: child list unavailable. SSE events will
     // register children as they arrive.
@@ -2575,25 +2514,19 @@ async function fetchProjects(directory?: string) {
   projectError.value = '';
   try {
     const data = (await opencodeApi.listProjects(OPENCODE_BASE_URL, directory)) as ProjectInfo[];
-    projects.value = Array.isArray(data) ? data : [];
-    registerProjectDirectories();
+    sessionGraphStore.setProjects(Array.isArray(data) ? data : []);
+    markSessionGraphChanged();
   } catch (error) {
     projectError.value = `Project load failed: ${toErrorMessage(error)}`;
   }
 }
 
 function upsertProject(next: ProjectInfo) {
-  const index = projects.value.findIndex((project) => project.id === next.id);
-  if (index >= 0) {
-    projects.value.splice(index, 1, { ...projects.value[index], ...next });
-  } else {
-    projects.value.unshift(next);
-  }
-  const dir = next.worktree?.trim();
-  if (dir) sessionGraphStore.setProjectDirectory(next.id, dir);
+  sessionGraphStore.upsertProjectEntry(next);
   projectSessionDirectories(next).forEach((candidate) => {
     sessionGraphStore.addDirectoryCandidate(candidate, next.id);
   });
+  markSessionGraphChanged();
 }
 
 async function fetchCurrentProject(directory?: string) {
@@ -2679,10 +2612,7 @@ function refreshSessionsForDirectory(directory?: string) {
 
 async function fetchWorktrees(directory?: string) {
   worktreeError.value = '';
-  if (!directory) {
-    worktrees.value = [];
-    return;
-  }
+  if (!directory) return;
   try {
     const baseDir = directory.trim();
     const data = await opencodeApi.listWorktrees(OPENCODE_BASE_URL, baseDir);
@@ -2693,7 +2623,8 @@ async function fetchWorktrees(directory?: string) {
     if (baseDir && !list.includes(baseDir)) list.unshift(baseDir);
     const current = activeDirectory.value;
     if (current && !list.includes(current)) list.unshift(current);
-    worktrees.value = list;
+    sessionGraphStore.setWorktrees(baseDir, list);
+    markSessionGraphChanged();
   } catch (error) {
     worktreeError.value = `Worktree load failed: ${toErrorMessage(error)}`;
   }
@@ -2709,29 +2640,19 @@ async function fetchWorktreeMeta(directory: string) {
     const data = (await opencodeApi.getVcsInfo(OPENCODE_BASE_URL, trimmed)) as VcsInfo;
     if (!data || typeof data.branch !== 'string') return;
     if (worktreeMetaRequestIdByDir.get(normalized) !== requestId) return;
-    worktreeMetaByDir.value = {
-      ...worktreeMetaByDir.value,
-      [normalized]: { branch: data.branch },
-    };
+    sessionGraphStore.setVcsInfo(normalized, { branch: data.branch });
+    markSessionGraphChanged();
   } catch {
     return;
   }
 }
 
 function resolveWorktreeMetadata(list: string[]) {
-  const next: Record<string, VcsInfo> = {};
+  sessionGraphStore.promoteVcsForWorktrees(list);
+  markSessionGraphChanged();
   list.forEach((dir) => {
     const normalized = normalizeDirectory(dir);
-    const existing = worktreeMetaByDir.value[normalized];
-    const pending = pendingWorktreeMetaByDir.get(normalized);
-    if (existing) next[normalized] = existing;
-    else if (pending) next[normalized] = pending;
-    if (pending) pendingWorktreeMetaByDir.delete(normalized);
-  });
-  worktreeMetaByDir.value = next;
-  list.forEach((dir) => {
-    const normalized = normalizeDirectory(dir);
-    if (worktreeMetaByDir.value[normalized]) return;
+    if (sessionGraphStore.getVcsInfo(normalized)) return;
     void fetchWorktreeMeta(dir);
   });
 }
@@ -2744,14 +2665,16 @@ function hasWorktreeDirectory(directory: string) {
 function appendWorktreeDirectory(directory: string) {
   const trimmed = directory.trim();
   if (!trimmed) return;
-  if (hasWorktreeDirectory(trimmed)) return;
-  worktrees.value = [trimmed, ...worktrees.value];
+  const pd = projectDirectory.value?.trim();
+  if (!pd) return;
+  sessionGraphStore.appendWorktree(pd, trimmed);
+  markSessionGraphChanged();
 }
 
 function storePendingWorktreeMeta(directory: string, branch?: string) {
   if (!branch) return;
   const normalized = normalizeDirectory(directory);
-  pendingWorktreeMetaByDir.set(normalized, { branch });
+  sessionGraphStore.setPendingVcs(normalized, { branch });
 }
 
 async function handleWorktreeReady(event: { directory: string; branch?: string }) {
@@ -2760,7 +2683,7 @@ async function handleWorktreeReady(event: { directory: string; branch?: string }
   storePendingWorktreeMeta(directory, event.branch);
   const selectedProject = selectedProjectId.value;
   if (!selectedProject) return;
-  const project = projects.value.find((item) => item.id === selectedProject);
+  const project = sessionGraphStore.getProjectEntry(selectedProject) as ProjectInfo | undefined;
   if (!project) return;
   const candidates = projectSessionDirectories(project);
   const normalized = normalizeDirectory(directory);
@@ -2782,9 +2705,8 @@ async function createWorktree() {
       projectDirectory.value,
     )) as WorktreeInfo;
     if (data && typeof data.directory === 'string') {
-      if (!worktrees.value.includes(data.directory)) {
-        worktrees.value.unshift(data.directory);
-      }
+      sessionGraphStore.appendWorktree(projectDirectory.value!, data.directory);
+      markSessionGraphChanged();
       activeDirectory.value = data.directory;
     }
     void fetchWorktrees(projectDirectory.value || undefined);
@@ -2831,8 +2753,6 @@ async function createNewSession() {
         data.directory === activeDirectory.value ||
         !activeDirectory.value;
       if (matchesDirectory) {
-        const existing = sessions.value.find((session) => session.id === data.id);
-        if (!existing) sessions.value.unshift(data);
         upsertSessionGraph(data);
       }
       selectedSessionId.value = data.id;
@@ -2857,7 +2777,6 @@ async function deleteSession(sessionId: string) {
     if (selectedSessionId.value === sessionId) selectedSessionId.value = '';
     removeSessionFromGraph(sessionId);
     deleteSessionStatus(sessionId, selectedProjectId.value);
-    sessions.value = sessions.value.filter((session) => session.id !== sessionId);
     void refreshSessionsForDirectory(activeDirectory.value || undefined);
   } catch (error) {
     sessionError.value = `Session delete failed: ${toErrorMessage(error)}`;
@@ -2877,8 +2796,6 @@ async function handleForkMessage(payload: { sessionId: string; messageId: string
     )) as SessionInfo;
     if (data && typeof data.id === 'string') {
       upsertSessionGraph(data);
-      const exists = sessions.value.some((session) => session.id === data.id);
-      if (!exists) sessions.value.unshift(data);
       seedForkedSessionComposerDraft(payload, data);
       if (data.projectID) selectedProjectId.value = data.projectID;
       if (data.directory) activeDirectory.value = data.directory;
@@ -2916,29 +2833,26 @@ async function handleProjectDirectorySelect(directory: string) {
   projectDirectory.value = directory;
   activeDirectory.value = directory;
   selectedSessionId.value = '';
-  worktrees.value = [];
   const current = await fetchCurrentProject(directory);
   await fetchProjects();
   if (current) {
     upsertProject(current);
     selectedProjectId.value = current.id;
   } else if (projects.value.length > 0) {
-    const match = projects.value.find((project) => project.worktree === directory);
+    const match = sessionGraphStore.getProjects().find((project) => project.worktree === directory) as ProjectInfo | undefined;
     if (match) selectedProjectId.value = match.id;
   }
   await fetchWorktrees(directory);
   await refreshSessionsForDirectory(directory);
+  if (selectedProjectId.value) {
+    sessionGraphStore.setProjectRoot(selectedProjectId.value, projectDirectory.value || directory);
+    sessionGraphStore.setProjectDirectory(selectedProjectId.value, activeDirectory.value || directory);
+    markSessionGraphChanged();
+  }
 }
 
 function collectProjectWorktreeDirectories() {
-  const directories = new Set<string>();
-  projects.value.forEach((project) => {
-    projectSessionDirectories(project).forEach((directory) => {
-      const normalized = directory.trim();
-      if (normalized) directories.add(normalized);
-    });
-  });
-  return Array.from(directories);
+  return sessionGraphStore.collectProjectDirectories();
 }
 
 async function bootstrapSessionGraph(directories: string[]) {
@@ -2948,7 +2862,8 @@ async function bootstrapSessionGraph(directories: string[]) {
       const current = await fetchCurrentProject(directory);
       if (current) {
         upsertProject(current);
-        sessionGraphStore.setProjectDirectory(current.id, directory);
+        const projectRoot = current.worktree?.trim() || directory;
+        sessionGraphStore.setProjectRoot(current.id, projectRoot);
       }
       const roots = await listSessionsByDirectory({
         instanceDirectory: directory,
@@ -2956,10 +2871,17 @@ async function bootstrapSessionGraph(directories: string[]) {
         limit: ROOT_SESSION_BOOTSTRAP_LIMIT,
       });
       const fallbackProjectId = current?.id || resolveProjectIdForDirectorySelection(directory);
+      if (fallbackProjectId) {
+        sessionGraphStore.setProjectDirectory(fallbackProjectId, directory);
+      }
       sessionGraphStore.upsertSessions(roots, {
         projectIDHint: fallbackProjectId || undefined,
         directoryHint: directory,
         retention: 'persistent',
+      });
+      roots.forEach((session) => {
+        if (!session.projectID) return;
+        sessionGraphStore.setProjectDirectory(session.projectID, directory);
       });
       roots.forEach((session) => {
         if (session.projectID && session.directory) {
@@ -2985,7 +2907,7 @@ async function bootstrapSessionGraph(directories: string[]) {
       }
     }),
   );
-  syncVisibleSessionsFromGraph();
+  markSessionGraphChanged();
 }
 
 function finalizeSelectionAfterBootstrap() {
@@ -3004,12 +2926,18 @@ function finalizeSelectionAfterBootstrap() {
         activeDirectory.value = rootDirectory;
       }
       selectedSessionId.value = initialSessionId;
-      syncVisibleSessionsFromGraph();
+      if (selectedProjectId.value && activeDirectory.value) {
+        sessionGraphStore.setProjectDirectory(selectedProjectId.value, activeDirectory.value);
+      }
+      markSessionGraphChanged();
       return;
     }
     if (rootDirectory) {
       activeDirectory.value = rootDirectory;
-      syncVisibleSessionsFromGraph();
+      if (selectedProjectId.value) {
+        sessionGraphStore.setProjectDirectory(selectedProjectId.value, activeDirectory.value);
+      }
+      markSessionGraphChanged();
       return;
     }
   }
@@ -3025,7 +2953,11 @@ function finalizeSelectionAfterBootstrap() {
     if (projectID) selectedProjectId.value = projectID;
   }
 
-  syncVisibleSessionsFromGraph();
+  if (selectedProjectId.value && activeDirectory.value) {
+    sessionGraphStore.setProjectDirectory(selectedProjectId.value, activeDirectory.value);
+  }
+
+  markSessionGraphChanged();
   const preferredId = pickPreferredSessionId(filteredSessions.value);
   if (!selectedSessionId.value && preferredId) selectedSessionId.value = preferredId;
 }
@@ -3050,7 +2982,7 @@ async function reconcileSessionGraphFromScopes() {
     }),
   );
   pruneIdleEphemeralSessions();
-  syncVisibleSessionsFromGraph();
+  markSessionGraphChanged();
   void fetchChildrenForActiveSessions();
 }
 
@@ -3290,12 +3222,6 @@ async function fetchPendingQuestions(directory?: string) {
     log('Question list failed', error);
   }
 }
-
-type UserMessageSelection = {
-  agent?: string;
-  modelId?: string;
-  variant?: string;
-};
 
 type UserMessageMeta = {
   agent?: string;
@@ -3805,36 +3731,6 @@ function applyUserMessageTimeToQueue(messageId: string, messageTime: number) {
   });
 }
 
-function pickLastUserSelection(
-  messages: Array<Record<string, unknown>>,
-): UserMessageSelection | null {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const entry = messages[i];
-    const info = (entry?.info as Record<string, unknown> | undefined) ?? undefined;
-    const role = typeof info?.role === 'string' ? info.role : '';
-    if (role !== 'user') continue;
-    const meta = parseUserMessageMeta(info);
-    if (!meta) continue;
-    return {
-      agent: meta.agent,
-      modelId: meta.modelId,
-      variant: meta.variant,
-    };
-  }
-  return null;
-}
-
-function hasStoredComposerDraftForSession(sessionId: string) {
-  const normalizedSessionId = sessionId.trim();
-  if (!normalizedSessionId) return false;
-  const projectId = resolveProjectIdForSession(normalizedSessionId) || selectedProjectId.value;
-  const contextKey = buildComposerContextKey(projectId, normalizedSessionId);
-  if (contextKey) return Boolean(readComposerDraft(contextKey));
-  const suffix = `:${normalizedSessionId}`;
-  const store = readComposerDraftStore();
-  return Object.keys(store).some((key) => key.endsWith(suffix));
-}
-
 async function fetchHistory(sessionId: string, isSubagentMessage = false) {
   if (!sessionId) return;
   const requestId = !isSubagentMessage ? ++primaryHistoryRequestId : 0;
@@ -3850,19 +3746,6 @@ async function fetchHistory(sessionId: string, isSubagentMessage = false) {
       if (selectedSessionId.value !== sessionId) return;
       if (getSelectedWorktreeDirectory() !== requestedDirectory) return;
     }
-    // NOTE: Disabled — subagent messages with role=user cause incorrect restoration
-    // if (!isSubagentMessage && !hasStoredComposerDraftForSession(sessionId)) {
-    //   const selection = pickLastUserSelection(data);
-    //   if (selection) {
-    //     if (selection.agent) selectedMode.value = selection.agent;
-    //     if (selection.modelId) selectedModel.value = selection.modelId;
-    //     if (selection.variant) {
-    //       selectedThinking.value = selection.variant;
-    //     } else if (selection.agent || selection.modelId) {
-    //       selectedThinking.value = undefined;
-    //     }
-    //   }
-    // }
     data.forEach((message, index) => {
       const info = message.info as Record<string, unknown> | undefined;
       const parts = message.parts as unknown;
@@ -5670,9 +5553,11 @@ function formatSessionGraphDump(): string {
   }
 
   for (const [projectID, nodes] of byProject) {
-    const dir = data.directoryByProjectID[projectID];
+    const projectRoot = data.projectRootByProjectID[projectID];
+    const directory = data.directoryByProjectID[projectID];
     lines.push(`PROJECT  ${projectID}`);
-    if (dir) lines.push(`  dir: ${dir}`);
+    if (projectRoot) lines.push(`  projectRoot: ${projectRoot}`);
+    if (directory) lines.push(`  directory: ${directory}`);
     lines.push('');
 
     // Build parent->children map
@@ -5712,7 +5597,7 @@ function formatSessionGraphDump(): string {
       lines.push(`${prefix}${connector}${node.sessionID}  ${status}${retention}${title}${slug}`);
 
       const detail = `${prefix}${isLast ? '    ' : '│   '}`;
-      if (node.directory) lines.push(`${detail}dir: ${node.directory}`);
+      if (node.directory) lines.push(`${detail}directory: ${node.directory}`);
       lines.push(`${detail}created: ${fmtTime(node.timeCreated)}  updated: ${fmtTime(node.timeUpdated)}`);
       lines.push(`${detail}lastSeen: ${fmtTime(node.lastSeenAt)}  lastActive: ${fmtTime(node.lastActiveAt)}`);
 
@@ -5744,21 +5629,70 @@ function formatSessionGraphDump(): string {
     lines.push('');
   }
 
-  // Directory -> Project candidates
-  const dirs = Object.keys(data.projectIDsByDirectory).sort();
-  if (dirs.length > 0) {
-    lines.push('DIRECTORY -> PROJECT CANDIDATES');
-    lines.push('');
-    for (const dir of dirs) {
-      const projectIDs = data.projectIDsByDirectory[dir] ?? [];
-      const marker = projectIDs.length === 1 ? '' : '  [ambiguous]';
-      lines.push(`  ${dir} → ${projectIDs.join(', ')}${marker}`);
-    }
-    lines.push('');
-  }
+   // Directory -> Project candidates
+   const dirs = Object.keys(data.projectIDsByDirectory).sort();
+   if (dirs.length > 0) {
+     lines.push('DIRECTORY -> PROJECT CANDIDATES');
+     lines.push('');
+     for (const dir of dirs) {
+       const projectIDs = data.projectIDsByDirectory[dir] ?? [];
+       const marker = projectIDs.length === 1 ? '' : '  [ambiguous]';
+       lines.push(`  ${dir} → ${projectIDs.join(', ')}${marker}`);
+     }
+     lines.push('');
+   }
 
-  return lines.join('\n');
-}
+   // Project List
+   if (data.projectList && data.projectList.length > 0) {
+     lines.push('PROJECT LIST');
+     lines.push('');
+     for (const project of data.projectList) {
+       lines.push(`  ${project.id}`);
+       if (project.worktree) lines.push(`    worktree: ${project.worktree}`);
+       if (project.sandboxes && project.sandboxes.length > 0) {
+         lines.push(`    sandboxes: ${project.sandboxes.join(', ')}`);
+       }
+     }
+     lines.push('');
+   }
+
+   // Worktrees by Project Root
+   if (data.worktreesByProjectRoot && Object.keys(data.worktreesByProjectRoot).length > 0) {
+     lines.push('WORKTREES BY PROJECT ROOT');
+     lines.push('');
+     for (const [root, worktrees] of Object.entries(data.worktreesByProjectRoot)) {
+       lines.push(`  ${root}`);
+       for (const wt of worktrees) {
+         lines.push(`    - ${wt}`);
+       }
+     }
+     lines.push('');
+   }
+
+   // VCS Info by Directory
+   if (data.vcsByDirectory && Object.keys(data.vcsByDirectory).length > 0) {
+     lines.push('VCS INFO (CONFIRMED)');
+     lines.push('');
+     for (const [dir, info] of Object.entries(data.vcsByDirectory)) {
+       lines.push(`  ${dir}`);
+       lines.push(`    branch: ${info.branch}`);
+     }
+     lines.push('');
+   }
+
+   // Pending VCS
+   if (data.pendingVcs && Object.keys(data.pendingVcs).length > 0) {
+     lines.push('VCS INFO (PENDING)');
+     lines.push('');
+     for (const [dir, info] of Object.entries(data.pendingVcs)) {
+       lines.push(`  ${dir}`);
+       lines.push(`    branch: ${info.branch}`);
+     }
+     lines.push('');
+   }
+
+   return lines.join('\n');
+ }
 
 function openDebugSessionViewer() {
   const key = 'debug:session-graph';
@@ -6018,14 +5952,6 @@ function syncFloatingMessages() {
 }
 
 watch(
-  worktrees,
-  (list) => {
-    resolveWorktreeMetadata(Array.isArray(list) ? list : []);
-  },
-  { immediate: true },
-);
-
-watch(
   () => toolWindowCanvasEl.value,
   () => {
     updateFloatingExtentObserver();
@@ -6034,30 +5960,56 @@ watch(
 );
 
 watch(
-  projectDirectory,
-  (directory, previous) => {
-    if (directory === previous) return;
-    if (typeof previous === 'undefined') return;
+  [projectDirectory, activeDirectory],
+  ([pd, ad], [prevPd, prevAd] = ['', '']) => {
     if (isBootstrapping.value) return;
-    selectedSessionId.value = '';
-    worktrees.value = [];
-    const currentSelected = selectedProjectId.value;
-    const currentRoot = resolveProjectDirectoryForProjectId(currentSelected);
-    if (!currentSelected || (currentRoot && normalizeDirectory(currentRoot) !== normalizeDirectory(directory || ''))) {
-      selectedProjectId.value = '';
+
+    const pdChanged = pd !== prevPd && typeof prevPd !== 'undefined';
+    const adChanged = ad !== prevAd && typeof prevAd !== 'undefined';
+
+    if (pdChanged) {
+      selectedSessionId.value = '';
+      const currentSelected = selectedProjectId.value;
+      const currentRoot = resolveProjectDirectoryForProjectId(currentSelected);
+      if (!currentSelected || (currentRoot && normalizeDirectory(currentRoot) !== normalizeDirectory(pd || ''))) {
+        selectedProjectId.value = '';
+      }
+      if (!selectedProjectId.value && pd) {
+        void fetchCurrentProject(pd).then((project) => {
+          if (!project?.id) return;
+          upsertProject(project);
+          if (projectDirectory.value === pd) {
+            selectedProjectId.value = project.id;
+            markSessionGraphChanged();
+          }
+        });
+      }
+      if (selectedProjectId.value && pd) {
+        sessionGraphStore.setProjectRoot(selectedProjectId.value, pd);
+      }
+      markSessionGraphChanged();
+      void fetchWorktrees(pd || undefined);
     }
-    if (!selectedProjectId.value && directory) {
-      void fetchCurrentProject(directory).then((project) => {
-        if (!project?.id) return;
-        upsertProject(project);
-        if (projectDirectory.value === directory) {
+
+    if (adChanged && !pdChanged) {
+      selectedSessionId.value = '';
+      if (ad) {
+        void fetchCurrentProject(ad).then((project) => {
+          if (!project?.id) return;
+          upsertProject(project);
+          if (activeDirectory.value !== ad) return;
           selectedProjectId.value = project.id;
-          syncVisibleSessionsFromGraph();
-        }
-      });
+          sessionGraphStore.setProjectDirectory(project.id, ad);
+          markSessionGraphChanged();
+          void refreshSessionsForDirectory(ad);
+        });
+      }
+      markSessionGraphChanged();
+      if (ad) {
+        void fetchCommands(ad);
+        void fetchSessionStatus(ad || undefined);
+      }
     }
-    syncVisibleSessionsFromGraph();
-    void fetchWorktrees(directory || undefined);
   },
   { immediate: true },
 );
@@ -6065,53 +6017,14 @@ watch(
 watch(
   worktrees,
   (list) => {
+    // Resolve VCS metadata for worktree list
+    resolveWorktreeMetadata(Array.isArray(list) ? list : []);
+
+    // Auto-select activeDirectory if current is not in list
     if (isBootstrapping.value) return;
     if (list.length === 0) return;
     if (activeDirectory.value && list.includes(activeDirectory.value)) return;
     activeDirectory.value = list[0] ?? '';
-  },
-  { immediate: true },
-);
-
-watch(
-  activeDirectory,
-  (value, previous) => {
-    if (value === previous) return;
-    if (typeof previous === 'undefined') return;
-    if (isBootstrapping.value) return;
-    selectedSessionId.value = '';
-    if (!selectedProjectId.value && value) {
-      const resolvedProjectId = resolveProjectIdForDirectorySelection(value || undefined);
-      selectedProjectId.value = resolvedProjectId || '';
-    }
-    if (!selectedProjectId.value && value) {
-      void fetchCurrentProject(value).then((project) => {
-        if (!project?.id) return;
-        upsertProject(project);
-        if (activeDirectory.value === value) {
-          selectedProjectId.value = project.id;
-          syncVisibleSessionsFromGraph();
-        }
-      });
-    }
-    syncVisibleSessionsFromGraph();
-    if (!value) return;
-    void fetchCommands(value);
-    void refreshSessionsForDirectory(value);
-    void fetchSessionStatus(value || undefined);
-  },
-  { immediate: true },
-);
-
-watch(
-  selectedProjectId,
-  () => {
-    if (isBootstrapping.value) return;
-    const rootDirectory = resolveProjectDirectoryForProjectId(selectedProjectId.value || undefined);
-    if (rootDirectory && normalizeDirectory(projectDirectory.value) !== normalizeDirectory(rootDirectory)) {
-      projectDirectory.value = rootDirectory;
-    }
-    syncVisibleSessionsFromGraph();
   },
   { immediate: true },
 );
@@ -6133,6 +6046,22 @@ watch(
     if (!isValid) {
       if (preferredId) selectedSessionId.value = preferredId;
     }
+  },
+  { immediate: true },
+);
+
+watch(
+  selectedProjectId,
+  () => {
+    if (isBootstrapping.value) return;
+    const rootDirectory = resolveProjectDirectoryForProjectId(selectedProjectId.value || undefined);
+    if (rootDirectory && normalizeDirectory(projectDirectory.value) !== normalizeDirectory(rootDirectory)) {
+      projectDirectory.value = rootDirectory;
+    }
+    if (selectedProjectId.value && activeDirectory.value) {
+      sessionGraphStore.setProjectDirectory(selectedProjectId.value, activeDirectory.value);
+    }
+    markSessionGraphChanged();
   },
   { immediate: true },
 );
@@ -6206,7 +6135,7 @@ async function fetchChildrenForActiveSessions() {
 function pruneIdleEphemeralSessions() {
   const keep = new Set<string>(allowedSessionIds.value);
   const changed = sessionGraphStore.pruneEphemeralChildren(CHILD_SESSION_PRUNE_TTL_MS, keep);
-  if (changed) syncVisibleSessionsFromGraph();
+  if (changed) markSessionGraphChanged();
 }
 
 watch(selectedSessionId, reloadSelectedSessionState, { immediate: true });
@@ -9954,7 +9883,8 @@ async function connect(options: { failFast?: boolean; timeoutMs?: number } = {})
         if (current && !list.includes(current)) list.unshift(current);
         const baseDir = projectBaseDirectory(projectUpdated);
         if (baseDir && !list.includes(baseDir)) list.unshift(baseDir);
-        worktrees.value = list;
+        sessionGraphStore.setWorktrees(baseDir, list);
+        markSessionGraphChanged();
       }
     }
 
@@ -9983,17 +9913,13 @@ async function connect(options: { failFast?: boolean; timeoutMs?: number } = {})
           subagentSessionExpiry.set(sessionInfo.id, Date.now() + SUBAGENT_ACTIVE_TTL_MS);
         }
       }
-      syncVisibleSessionsFromGraph();
+      markSessionGraphChanged();
 
       if (matchesSelectedProject(sessionInfo)) {
         const matchesWorktree = matchesSelectedWorktree(sessionInfo);
         if (isDelete) {
           deleteSessionStatus(sessionInfo.id, sessionInfo.projectID);
-          if (matchesWorktree) {
-            sessions.value = sessions.value.filter((session) => session.id !== sessionInfo.id);
-          }
         } else {
-          if (matchesWorktree) syncVisibleSessionsFromGraph();
           if (
             sessionInfo.directory &&
             sessionInfo.projectID &&
