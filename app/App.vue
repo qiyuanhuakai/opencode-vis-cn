@@ -7116,50 +7116,57 @@ function handleOpenImage(payload: { url: string; filename: string }) {
 }
 
 async function openFileViewer(path: string) {
-  const key = `file-viewer:${path}`;
-  if (fw.has(key)) {
-    fw.bringToFront(key);
-    return;
-  }
-  const pos = getFileViewerPosition(0.18, 0.14);
-  const lang = guessLanguage(path);
-  fw.open(key, {
-    component: FileViewerContent,
-    props: {
-      path,
-      lang,
-      gutterMode: 'default',
-      theme: shikiTheme.value,
-    },
-    closable: true,
-    resizable: true,
-    scroll: 'manual',
-    title: path,
-    x: pos.x,
-    y: pos.y,
-    width: FILE_VIEWER_WINDOW_WIDTH,
-    height: FILE_VIEWER_WINDOW_HEIGHT,
-    expiry: Infinity,
-  });
+   const key = `file-viewer:${path}`;
+   if (fw.has(key)) {
+     fw.bringToFront(key);
+     return;
+   }
+   const pos = getFileViewerPosition(0.18, 0.14);
+   const lang = guessLanguage(path);
+   fw.open(key, {
+     component: FileViewerContent,
+     props: {
+       path,
+       lang,
+       gutterMode: 'default',
+       theme: shikiTheme.value,
+     },
+     closable: true,
+     resizable: true,
+     scroll: 'manual',
+     title: resolveWorktreeRelativePath(path) || path,
+     x: pos.x,
+     y: pos.y,
+     width: FILE_VIEWER_WINDOW_WIDTH,
+     height: FILE_VIEWER_WINDOW_HEIGHT,
+     expiry: Infinity,
+   });
 
-  const directory = activeDirectory.value.trim();
-  if (!directory) {
-    fw.updateOptions(key, {
-      props: {
-        path,
-        rawHtml: 'No active directory selected.',
-        gutterMode: 'none',
-        theme: shikiTheme.value,
-      },
-    });
-    return;
-  }
+   const directory = activeDirectory.value.trim();
+   if (!directory) {
+     fw.updateOptions(key, {
+       props: {
+         path,
+         rawHtml: 'No active directory selected.',
+         gutterMode: 'none',
+         theme: shikiTheme.value,
+       },
+     });
+     return;
+   }
 
-  try {
-    const data = (await opencodeApi.readFileContent(OPENCODE_BASE_URL, {
-      directory,
-      path,
-    })) as FileContentResponse;
+   try {
+     // API expects path relative to directory
+     const normalizedDir = normalizeDirectory(directory);
+     const prefix = `${normalizedDir}/`;
+     const relativePath = path.startsWith(prefix)
+       ? path.slice(prefix.length)
+       : path;
+
+     const data = (await opencodeApi.readFileContent(OPENCODE_BASE_URL, {
+       directory,
+       path: relativePath,
+     })) as FileContentResponse;
     const type = data?.type === 'binary' ? 'binary' : 'text';
     const encoding = typeof data?.encoding === 'string' ? data.encoding : 'utf-8';
     const content = typeof data?.content === 'string' ? data.content : '';
@@ -9249,6 +9256,47 @@ async function handleQuestionReply(payload: { requestId: string; answers: Questi
   refreshQuestionWindow(requestId);
   try {
     await sendQuestionReply(requestId, answers);
+    
+    // Get the question request to display the answer
+    const key = `question:${requestId}`;
+    const entry = fw.get(key);
+    const request = entry?.props?.request as QuestionRequest | undefined;
+    
+    if (request) {
+      // Build answer content
+      const answerLines: string[] = [];
+      request.questions.forEach((question, index) => {
+        const questionAnswers = answers[index] ?? [];
+        if (questionAnswers.length > 0) {
+          answerLines.push(`**${question.header}**`);
+          questionAnswers.forEach((answer) => {
+            answerLines.push(`- ${answer}`);
+          });
+        }
+      });
+      
+      const answerContent = answerLines.join('\n');
+      
+      // Add answer entry to output queue
+      queue.value.push({
+        time: Date.now(),
+        expiresAt: Infinity,
+        x: 0,
+        y: 0,
+        header: '',
+        content: answerContent,
+        scroll: false,
+        scrollDistance: 0,
+        scrollDuration: 0,
+        html: '',
+        isWrite: false,
+        isMessage: false,
+        follow: true,
+        zIndex: nextWindowZ(),
+        isQuestionAnswer: true,
+      });
+    }
+    
     removeQuestionEntry(requestId);
   } catch (error) {
     setQuestionError(requestId, toErrorMessage(error));
