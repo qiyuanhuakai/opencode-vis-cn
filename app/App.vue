@@ -182,6 +182,7 @@ import {
 import { useAutoScroller, type ScrollMode } from './composables/useAutoScroller';
 import { useFloatingWindows } from './composables/useFloatingWindows';
 import { useGlobalEvents } from './composables/useGlobalEvents';
+import { useReasoningWindows, type ReasoningFinish } from './composables/useReasoningWindows';
 import { renderWorkerHtml } from './utils/workerRenderer';
 import * as opencodeApi from './utils/opencode';
 import { opencodeTheme, resolveTheme, resolveAgentColor } from './utils/theme';
@@ -401,11 +402,6 @@ type QuestionRequest = {
 
 type QuestionAnswer = string[];
 
-type ReasoningFinish = {
-  id: string;
-  time: number;
-};
-
 type PtyInfo = {
   id: string;
   title: string;
@@ -532,17 +528,13 @@ const subagentSessionExpiry = new Map<string, number>();
 const messageSummaryTitleById = new Map<string, string>();
 type MessageDiffEntry = { file: string; diff: string; before?: string; after?: string };
 const messageDiffsByKey = reactive(new Map<string, Array<MessageDiffEntry>>());
-const reasoningTitleBySessionId = new Map<string, string>();
 type SessionStatusType = 'busy' | 'idle' | 'retry';
 
-const reasoningCloseTimers = new Map<string, number>();
-const lastReasoningMessageIdByKey = new Map<string, string>();
 const messageAttachmentsById = new Map<string, MessageAttachment[]>();
-const activeReasoningMessageIdByKey = new Map<string, string>();
-const finishedReasoningByKey = new Map<string, ReasoningFinish>();
 const globalEventHooks = new Set<(payload: unknown, eventType: string) => void>();
 let unregisterSessionStatusGlobalHook: (() => void) | null = null;
 const globalEventUnsubscribers: Array<() => void> = [];
+
 const dragState = ref<{
   entry: FileReadEntry;
   startX: number;
@@ -752,6 +744,27 @@ const selectedProjectId = computed(() => {
 });
 const activeDirectory = ref('');
 const selectedSessionId = ref('');
+
+const reasoning = useReasoningWindows({
+  selectedSessionId,
+  queue: queue as any,
+  toolWindowCanvasEl,
+  reasoningCloseDelayMs: REASONING_CLOSE_DELAY_MS,
+});
+const {
+  reasoningTitleBySessionId,
+  lastReasoningMessageIdByKey,
+  activeReasoningMessageIdByKey,
+  finishedReasoningByKey,
+  getReasoningKey,
+  getReasoningFinish,
+  markReasoningFinished,
+  clearReasoningCloseTimerForSession,
+  scheduleReasoningClose,
+  scheduleReasoningScroll,
+  updateReasoningExpiry,
+} = reasoning;
+
 const projectDirectory = ref('');
 const homePath = ref('');
 const serverWorktreePath = ref('');
@@ -2061,32 +2074,6 @@ function updateSubagentExpiry(sessionId: string, status: 'busy' | 'idle') {
   });
 }
 
-function updateReasoningExpiry(sessionId: string | undefined, status: 'busy' | 'idle') {
-  if (!sessionId && !selectedSessionId.value) return;
-  const targetSessionId = sessionId ?? selectedSessionId.value;
-  if (!targetSessionId) return;
-  const reasoningKey = getReasoningKey(targetSessionId);
-  const finish = getReasoningFinish(reasoningKey);
-  const isFinished = Boolean(finish);
-  if (status === 'idle' && !isFinished) return;
-  if (status === 'busy' && isFinished) return;
-  const now = Date.now();
-  const nextExpiresAt =
-    status === 'busy'
-      ? Number.MAX_SAFE_INTEGER
-      : finish
-        ? finish.time + REASONING_CLOSE_DELAY_MS
-        : now;
-  queue.value.forEach((entry) => {
-    if (!entry.isReasoning) return;
-    const matchesSession =
-      entry.sessionId === targetSessionId ||
-      (!entry.sessionId && targetSessionId === selectedSessionId.value);
-    if (!matchesSession) return;
-    entry.expiresAt = nextExpiresAt;
-  });
-}
-
 function startInputResize(event: PointerEvent) {
   if (event.button !== 0) return;
   const output = outputEl.value;
@@ -2229,70 +2216,6 @@ function handlePointerUp() {
   resizeState.value = null;
   if (inputResizeState.value) scheduleShellFitAll();
   inputResizeState.value = null;
-}
-
-function getReasoningKey(sessionId?: string) {
-  return sessionId ?? selectedSessionId.value ?? 'main';
-}
-
-function getReasoningFinish(reasoningKey: string, messageId?: string) {
-  const finished = finishedReasoningByKey.get(reasoningKey);
-  if (!finished) return null;
-  if (messageId && finished.id !== messageId) return null;
-  const activeId = activeReasoningMessageIdByKey.get(reasoningKey);
-  if (activeId && finished.id !== activeId) return null;
-  return finished;
-}
-
-function markReasoningFinished(sessionId?: string, messageId?: string) {
-  const resolvedSessionId = sessionId ?? selectedSessionId.value;
-  const reasoningKey = getReasoningKey(resolvedSessionId);
-  const activeId = activeReasoningMessageIdByKey.get(reasoningKey);
-  const resolvedMessageId = messageId ?? activeId;
-  if (!resolvedMessageId) return false;
-  if (activeId && resolvedMessageId !== activeId) return false;
-  finishedReasoningByKey.set(reasoningKey, { id: resolvedMessageId, time: Date.now() });
-  return true;
-}
-
-function clearReasoningCloseTimer(reasoningKey: string) {
-  const existing = reasoningCloseTimers.get(reasoningKey);
-  if (existing === undefined) return;
-  window.clearTimeout(existing);
-  reasoningCloseTimers.delete(reasoningKey);
-}
-
-function clearReasoningCloseTimerForSession(sessionId?: string) {
-  clearReasoningCloseTimer(getReasoningKey(sessionId));
-}
-
-function scheduleReasoningClose(sessionId?: string) {
-  const resolvedSessionId = sessionId ?? selectedSessionId.value;
-  const reasoningKey = getReasoningKey(resolvedSessionId);
-  clearReasoningCloseTimer(reasoningKey);
-  if (!resolvedSessionId) return;
-  const timer = window.setTimeout(() => {
-    reasoningCloseTimers.delete(reasoningKey);
-    updateReasoningExpiry(resolvedSessionId, 'idle');
-  }, REASONING_CLOSE_DELAY_MS);
-  reasoningCloseTimers.set(reasoningKey, timer);
-}
-
-function scheduleReasoningScroll(messageKey: string) {
-  nextTick(() => {
-    requestAnimationFrame(() => {
-      const canvas = toolWindowCanvasEl.value;
-      if (!canvas) return;
-      const entry = queue.value.find((item) => item.messageKey === messageKey);
-      if (entry && entry.follow === false) return;
-      if (entry) entry.follow = true;
-      const term = canvas.querySelector(
-        `[data-message-key="${messageKey}"] .term-inner`,
-      ) as HTMLElement | null;
-      if (!term) return;
-      term.scrollTop = Math.max(0, term.scrollHeight - term.clientHeight);
-    });
-  });
 }
 
 function isNearBottom(target: HTMLElement, threshold = FLOATING_FOLLOW_THRESHOLD_PX) {
@@ -5951,9 +5874,7 @@ async function reloadSelectedSessionState() {
   messageSummaryTitleById.clear();
   messageDiffsByKey.clear();
   messageAttachmentsById.clear();
-  reasoningTitleBySessionId.clear();
-  activeReasoningMessageIdByKey.clear();
-  finishedReasoningByKey.clear();
+  reasoning.reset();
   subagentSessionExpiry.clear();
   retryStatus.value = null;
   todosBySessionId.value = {};
