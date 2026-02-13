@@ -245,7 +245,7 @@ function getChildren(parentId: string): MessageInfo[] {
 
 function getFinalAnswer(root: MessageInfo): MessageInfo | undefined {
   if (props.getFinalAnswer) return props.getFinalAnswer(root.id);
-  const assistants = getThread(root.id).filter((msg) => msg.role === 'assistant');
+  const assistants = getThread(root.id).filter((msg) => msg.role === 'assistant' && getMessageContent(msg).length > 0);
   return assistants[assistants.length - 1];
 }
 
@@ -320,7 +320,7 @@ function getFinalAnswerContent(root: MessageInfo): string {
 }
 
 function getAssistantMessages(root: MessageInfo): MessageInfo[] {
-  return getThread(root.id).filter((msg) => msg.role === 'assistant');
+  return getThread(root.id).filter((msg) => msg.role === 'assistant' && getMessageContent(msg).length > 0);
 }
 
 function isThreadStreaming(root: MessageInfo): boolean {

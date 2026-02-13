@@ -291,7 +291,9 @@ export function useMessages(scope: SessionScope) {
 
   function getFinalAnswer(rootId: string): MessageInfo | undefined {
     const thread = getThread(rootId);
-    const assistants = thread.filter((message) => message.role === 'assistant').sort(byTimeThenId);
+    const assistants = thread
+      .filter((message) => message.role === 'assistant' && getTextContent(message.id).length > 0)
+      .sort(byTimeThenId);
     return assistants[assistants.length - 1];
   }
 
