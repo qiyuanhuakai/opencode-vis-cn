@@ -3,7 +3,7 @@ import { ref, computed, provide, watch, nextTick, onBeforeUnmount } from 'vue';
 import CodeContent from './CodeContent.vue';
 import { FLOATING_WINDOW_KEY, type FloatingWindowAPI } from '../composables/useFloatingWindow';
 import type { FloatingWindowEntry, useFloatingWindows } from '../composables/useFloatingWindows';
-import { useScrollFollow, type ScrollMode } from '../composables/useScrollFollow';
+import { useAutoScroller, type ScrollMode } from '../composables/useAutoScroller';
 import { Icon } from '@iconify/vue';
 
 const props = defineProps<{
@@ -20,7 +20,7 @@ const windowEl = ref<HTMLElement>();
 const bodyEl = ref<HTMLElement>();
 
 const scrollMode = computed<ScrollMode>(() => props.entry.scroll || 'manual');
-const { showResumeButton, resumeFollow } = useScrollFollow(bodyEl, scrollMode);
+const { showResumeButton, resumeFollow } = useAutoScroller(bodyEl, scrollMode);
 
 watch(
   () => props.entry.resolvedHtml,

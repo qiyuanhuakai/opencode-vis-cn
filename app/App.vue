@@ -43,7 +43,7 @@
                 @show-message-diff="handleShowMessageDiff"
                 @show-message-history="handleShowMessageHistory"
                 @open-image="handleOpenImage"
-                @content-resized="scheduleFollowScroll('content-resized-event')"
+                @content-resized="notifyContentChange()"
                 @initial-render-complete="handleOutputPanelInitialRenderComplete"
               />
               <SidePanel
@@ -179,7 +179,7 @@ import {
   formatQueryToolTitle,
   toolColor,
 } from './components/ToolWindow/utils';
-import { useScrollFollow, type ScrollMode } from './composables/useScrollFollow';
+import { useAutoScroller, type ScrollMode } from './composables/useAutoScroller';
 import { useFloatingWindows } from './composables/useFloatingWindows';
 import { renderWorkerHtml } from './utils/workerRenderer';
 import * as opencodeApi from './utils/opencode';
@@ -465,49 +465,16 @@ const {
   runWithoutTracking: runWithoutOutputPanelTracking,
   resumeFollow,
   scrollToBottom: scrollOutputPanelToBottom,
-} = useScrollFollow(outputPanelContainerEl, outputPanelScrollMode, {
+  notifyContentChange,
+} = useAutoScroller(outputPanelContainerEl, outputPanelScrollMode, {
   bottomThresholdPx: FOLLOW_THRESHOLD_PX,
   observeDelayMs: 0,
   smoothEngine: 'native',
-  smoothOnMutation: false,
   smoothOnInitialFollow: false,
 });
 
 const outputPanelInitialFollowPending = ref(true);
 pauseOutputPanelTracking();
-
-function scheduleFollowScroll(reason = 'unspecified') {
-  const panel = outputPanelContainerEl.value;
-  followDebug('scheduleFollowScroll:request', {
-    reason,
-    trackingPaused: isOutputPanelTrackingPaused.value,
-    isFollowing: isFollowing.value,
-    queueLength: queue.value.length,
-    scrollTop: panel?.scrollTop,
-    scrollHeight: panel?.scrollHeight,
-    clientHeight: panel?.clientHeight,
-  });
-  if (isOutputPanelTrackingPaused.value) {
-    followDebug('scheduleFollowScroll:skip-paused', { reason });
-    return;
-  }
-  if (!isFollowing.value) {
-    followDebug('scheduleFollowScroll:skip-not-following', { reason });
-    return;
-  }
-  nextTick(() => {
-    if (isOutputPanelTrackingPaused.value) {
-      followDebug('scheduleFollowScroll:nextTick-skip-paused', { reason });
-      return;
-    }
-    if (!isFollowing.value) {
-      followDebug('scheduleFollowScroll:nextTick-skip-not-following', { reason });
-      return;
-    }
-    followDebug('scheduleFollowScroll:nextTick-scroll', { reason });
-    scrollOutputPanelToBottom(false);
-  });
-}
 
 function handleOutputPanelInitialRenderComplete() {
   followDebug('initialRenderComplete:start', {
@@ -3970,7 +3937,7 @@ async function fetchHistory(sessionId: string, isSubagentMessage = false) {
     }
 
     if (!isSubagentMessage) {
-      scheduleFollowScroll('history-loaded');
+      notifyContentChange();
     }
   } catch (error) {
     log('History load failed', error);
@@ -10039,7 +10006,7 @@ async function connect(options: { failFast?: boolean; timeoutMs?: number } = {})
             });
             messageIndexById.set(attachmentKey, queue.value.length - 1);
             messageContentById.set(attachmentKey, '');
-            if (!isSubagentMessage) scheduleFollowScroll('attachment-upsert');
+            if (!isSubagentMessage) notifyContentChange();
           }
         }
         return;
@@ -10315,7 +10282,7 @@ async function connect(options: { failFast?: boolean; timeoutMs?: number } = {})
           messageAttachmentsById.set(roundMessageKey, attachments);
         }
         if (!isSubagentMessage && existingRoundIndex >= 0)
-          scheduleFollowScroll('round-update-existing');
+          notifyContentChange();
         return;
       }
 
@@ -10384,7 +10351,7 @@ async function connect(options: { failFast?: boolean; timeoutMs?: number } = {})
         }
         messageContentById.set(messageKey, nextContent);
         if (isFloatingMessage) scheduleReasoningScroll(messageKey);
-        if (!isSubagentMessage) scheduleFollowScroll('message-update-existing');
+        if (!isSubagentMessage) notifyContentChange();
         return;
       }
 
@@ -10423,7 +10390,7 @@ async function connect(options: { failFast?: boolean; timeoutMs?: number } = {})
       });
       messageIndexById.set(messageKey, queue.value.length - 1);
       if (isFloatingMessage) scheduleReasoningScroll(messageKey);
-      if (!isSubagentMessage) scheduleFollowScroll('message-create');
+      if (!isSubagentMessage) notifyContentChange();
       return;
     }
 
