@@ -74,8 +74,8 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.message-content :deep(pre),
-.message-content :deep(code) {
+.message-content :deep(pre.shiki),
+.message-content :deep(pre.shiki > code) {
   margin: 0;
   padding: 0;
   background: transparent !important;
@@ -94,7 +94,7 @@ onBeforeUnmount(() => {
   line-height: inherit !important;
 }
 
-.message-content :deep(code) {
+.message-content :deep(pre.shiki > code) {
   display: grid;
   grid-template-columns: 1fr;
   column-gap: 0;
@@ -136,148 +136,137 @@ onBeforeUnmount(() => {
   font-weight: inherit;
 }
 
-/* markdown-it rendered content — match shiki line density */
 .message-content :deep(.markdown-host) {
-  line-height: 1.15;
+  line-height: 1.2;
+  color: inherit;
   overflow-wrap: anywhere;
-  word-break: break-word;
+  white-space: normal;
 }
 
-.message-content :deep(.markdown-host ul),
-.message-content :deep(.markdown-host ol),
-.message-content :deep(.markdown-host li),
-.message-content :deep(.markdown-host blockquote),
-.message-content :deep(.markdown-host p),
+.message-content :deep(.markdown-host :where(p, ul, ol, li, blockquote, pre, hr, h1, h2, h3, h4, h5, h6)) {
+  margin: 0;
+  margin-block: 0;
+  padding: 0;
+}
+
 .message-content :deep(.markdown-host h1),
 .message-content :deep(.markdown-host h2),
 .message-content :deep(.markdown-host h3),
 .message-content :deep(.markdown-host h4),
 .message-content :deep(.markdown-host h5),
 .message-content :deep(.markdown-host h6) {
-  margin: 0.5em 0;
-  padding: 0;
+  line-height: 1.2;
+}
+
+.message-content :deep(.markdown-host h1) {
+  margin: 0.2em 0 0.1em;
+  font-size: 1.08em;
+  font-weight: 700;
+}
+
+.message-content :deep(.markdown-host h2) {
+  margin: 0.18em 0 0.08em;
+  font-size: 1.04em;
+  font-weight: 700;
+}
+
+.message-content :deep(.markdown-host h3) {
+  margin: 0.15em 0 0.06em;
+  font-size: 1em;
   font-weight: 600;
-  color: #e2e8f0;
 }
 
-.message-content :deep(.markdown-host h1) { font-size: 1.4em; }
-.message-content :deep(.markdown-host h2) { font-size: 1.25em; }
-.message-content :deep(.markdown-host h3) { font-size: 1.1em; }
-.message-content :deep(.markdown-host h4) { font-size: 1em; }
-
-.message-content :deep(.markdown-host a) {
-  color: #60a5fa;
-  text-decoration: underline;
-  text-decoration-color: rgba(96, 165, 250, 0.4);
-  text-underline-offset: 2px;
-}
-
-.message-content :deep(.markdown-host a:hover) {
-  text-decoration-color: #60a5fa;
+.message-content :deep(.markdown-host h4),
+.message-content :deep(.markdown-host h5),
+.message-content :deep(.markdown-host h6) {
+  margin: 0.12em 0 0.04em;
+  font-size: 1em;
+  font-weight: 600;
 }
 
 .message-content :deep(.markdown-host ul),
 .message-content :deep(.markdown-host ol) {
-  padding-left: 1.6em;
+  padding-left: 1.35em;
 }
 
-.message-content :deep(.markdown-host li) {
-  display: block;
-  margin: 0.25em 0;
+.message-content :deep(.markdown-host ul) {
+  padding: 0.5em;
+  margin: 0;
+}
+
+.message-content :deep(.markdown-host ul > li) {
+  list-style: none;
+  position: relative;
+  padding-left: 0.9em;
 }
 
 .message-content :deep(.markdown-host ul > li)::before {
-  content: '- ';
+  content: '-';
+  position: absolute;
+  left: 0;
+  color: #60a5fa;
 }
 
-.message-content :deep(.markdown-host ol) {
-  counter-reset: md-ol;
-}
 
-.message-content :deep(.markdown-host ol > li) {
-  counter-increment: md-ol;
-}
-
-.message-content :deep(.markdown-host ol > li)::before {
-  content: counter(md-ol) '. ';
-}
 
 .message-content :deep(.markdown-host blockquote) {
-  padding: 0.2em 0.8em;
-  border-left: 3px solid #64748b;
-  color: #94a3b8;
-  font-style: italic;
+  margin: 0.2em 0;
+  padding-left: 0.7em;
+  border-left: 2px solid rgba(148, 163, 184, 0.5);
+  color: rgba(226, 232, 240, 0.85);
+  background: rgba(15, 23, 42, 0.35);
+  border-radius: 0 4px 4px 0;
 }
 
-.message-content :deep(.markdown-host table) {
-  border-collapse: collapse;
-  margin: 0.5em 0;
-  width: auto;
-  max-width: 100%;
-  overflow-x: auto;
-  display: block;
-  font-size: 0.95em;
+.message-content :deep(.markdown-host a) {
+  color: #7dd3fc;
+  text-decoration: underline;
+  text-decoration-color: rgba(125, 211, 252, 0.55);
+  text-underline-offset: 2px;
 }
 
-.message-content :deep(.markdown-host th),
-.message-content :deep(.markdown-host td) {
-  border: 1px solid #334155;
-  padding: 0.35em 0.7em;
-  text-align: left;
-}
-
-.message-content :deep(.markdown-host th) {
-  background: rgba(51, 65, 85, 0.4);
-  font-weight: 600;
-  color: #e2e8f0;
-}
-
-.message-content :deep(.markdown-host tr:nth-child(even)) {
-  background: rgba(51, 65, 85, 0.15);
-}
-
-.message-content :deep(.markdown-host hr) {
-  border: none;
-  border-top: 1px solid #334155;
-  margin: 0.8em 0;
-}
-
-.message-content :deep(.markdown-host code) {
-  display: inline;
-  background: rgba(51, 65, 85, 0.5);
-  padding: 0.1em 0.3em;
-  border-radius: 3px;
-  font-size: 0.9em;
-}
-
-.message-content :deep(.markdown-host pre) {
-  margin: 0.5em 0;
-  padding: 0.6em 0.8em;
-  border-radius: 4px;
-  overflow-x: auto;
-  white-space: pre;
-}
-
-.message-content :deep(.markdown-host pre code) {
-  display: block;
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
-  font-size: inherit;
-  white-space: pre;
-}
-
-.message-content :deep(.markdown-host img) {
-  max-width: 100%;
-  height: auto;
+.message-content :deep(.markdown-host a:hover) {
+  text-decoration-color: #7dd3fc;
 }
 
 .message-content :deep(.markdown-host strong) {
-  font-weight: 600;
-  color: #e2e8f0;
+  font-weight: 700;
 }
 
 .message-content :deep(.markdown-host em) {
   font-style: italic;
 }
+
+.message-content :deep(.markdown-host hr) {
+  border: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.35);
+}
+
+.message-content :deep(.markdown-host code:not(pre code)) {
+  display: inline;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.95em;
+  background: rgba(148, 163, 184, 0.2);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 4px;
+  padding: 0.05em 0.32em;
+}
+
+.message-content :deep(.markdown-host pre:not(.shiki)) {
+  padding: 0.45em 0.6em;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  overflow-x: auto;
+}
+
+.message-content :deep(.markdown-host pre:not(.shiki) code) {
+  display: block;
+  white-space: pre;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
 </style>
