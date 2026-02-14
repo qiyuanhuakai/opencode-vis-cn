@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, provide, watch, nextTick, onBeforeUnmount } from 'vue';
+import { ref, computed, provide, watch, onBeforeUnmount } from 'vue';
 import CodeContent from './CodeContent.vue';
 import { FLOATING_WINDOW_KEY, type FloatingWindowAPI } from '../composables/useFloatingWindow';
 import type { FloatingWindowEntry, useFloatingWindows } from '../composables/useFloatingWindows';
@@ -20,24 +20,51 @@ const windowEl = ref<HTMLElement>();
 const bodyEl = ref<HTMLElement>();
 
 const scrollMode = computed<ScrollMode>(() => props.entry.scroll || 'manual');
-const { showResumeButton, resumeFollow, notifyContentChange } = useAutoScroller(bodyEl, scrollMode);
+const { showResumeButton, isFollowing, resumeFollow, notifyContentChange } = useAutoScroller(
+  bodyEl,
+  scrollMode,
+);
 
 function handleResumeFollowClick() {
   resumeFollow();
+}
+
+let pendingScrollTop: number | null = null;
+let shouldRestoreScrollTop = false;
+
+function shouldPreserveScrollPosition() {
+  if (scrollMode.value === 'manual' || scrollMode.value === 'none') return true;
+  return scrollMode.value === 'follow' && !isFollowing.value;
 }
 
 watch(
   () => props.entry.resolvedHtml,
   () => {
     const el = bodyEl.value;
-    if (!el) return;
-    const saved = el.scrollTop;
-    nextTick(() => {
-      el.scrollTop = saved;
-      notifyContentChange();
-    });
+    if (!el) {
+      pendingScrollTop = null;
+      shouldRestoreScrollTop = false;
+      return;
+    }
+    shouldRestoreScrollTop = shouldPreserveScrollPosition();
+    pendingScrollTop = shouldRestoreScrollTop ? el.scrollTop : null;
   },
   { flush: 'pre' },
+);
+
+watch(
+  () => props.entry.resolvedHtml,
+  () => {
+    const el = bodyEl.value;
+    if (!el) return;
+    if (shouldRestoreScrollTop && pendingScrollTop !== null) {
+      el.scrollTop = pendingScrollTop;
+    }
+    pendingScrollTop = null;
+    shouldRestoreScrollTop = false;
+    notifyContentChange();
+  },
+  { flush: 'post' },
 );
 
 const api: FloatingWindowAPI = {
