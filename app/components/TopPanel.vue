@@ -126,7 +126,7 @@
         </button>
       </div>
       <div class="top-right">
-        <button type="button" class="control-button" disabled title="stub">Logout</button>
+        <button type="button" class="control-button" @click="$emit('logout')">Logout</button>
       </div>
     </div>
   </div>
@@ -183,6 +183,7 @@ const emit = defineEmits<{
   (event: 'delete-session', value: string): void;
   (event: 'archive-session', value: string): void;
   (event: 'open-directory'): void;
+  (event: 'logout'): void;
 }>();
 
 const MAX_WORKTREES = 5;

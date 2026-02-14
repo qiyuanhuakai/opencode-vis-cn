@@ -15,6 +15,7 @@
           @archive-session="archiveSession"
           @select-session="handleTopPanelSessionSelect"
           @open-directory="openProjectPicker"
+          @logout="handleLogout"
         />
       </header>
       <main ref="outputEl" class="app-output">
@@ -7510,6 +7511,15 @@ async function startInitialization() {
 function handleLogin() {
   credentials.save(loginUrl.value, loginUsername.value, loginPassword.value);
   void startInitialization();
+}
+
+function handleLogout() {
+  credentials.clear();
+  ge.disconnect();
+  disposeShellWindows({ preserve: false });
+  uiInitState.value = 'login';
+  initErrorMessage.value = '';
+  connectionState.value = 'connecting';
 }
 
 onMounted(() => {
