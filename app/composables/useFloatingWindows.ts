@@ -1,4 +1,4 @@
-import { reactive, computed, markRaw, onUnmounted, type Component, type Ref } from 'vue';
+import { reactive, computed, markRaw, onUnmounted, type Component } from 'vue';
 import { renderWorkerHtml } from '../utils/workerRenderer';
 
 export interface FloatingWindowEntry {
@@ -208,7 +208,7 @@ export function useFloatingWindows() {
           lineLimit: merged.lineLimit,
         });
         merged.isReady = true;
-      } catch (e) {
+      } catch {
         merged.resolvedHtml = `<pre>${merged.content}</pre>`;
         merged.isReady = true;
       }
@@ -360,6 +360,7 @@ export function useFloatingWindows() {
       clearTimeout(timerId);
     }
     timerMap.clear();
+    // eslint-disable-next-line unicorn/no-useless-spread -- spread needed: close() deletes from entriesMap during iteration
     for (const key of [...entriesMap.keys()]) {
       close(key);
     }
