@@ -5,6 +5,7 @@
         ref="textareaRef"
         v-model="messageValue"
         class="input-textarea"
+        :disabled="props.disabled"
         placeholder="Send a message..."
         @keydown="handleKeydown"
         @keydown.enter.ctrl.prevent="$emit('send')"
@@ -63,7 +64,7 @@
             v-model="modeValue"
             :label="selectedAgentLabel"
             :placeholder="hasAgentOptions ? 'Select agent' : 'Loading agents...'"
-            :disabled="!hasAgentOptions"
+            :disabled="props.disabled || !hasAgentOptions"
             button-class="input-control input-dropdown-button"
             :button-style="agentButtonStyle"
             popup-class="input-dropdown-popup"
@@ -98,7 +99,7 @@
               v-model="modelValue"
               :label="selectedModelDisplayName"
               :placeholder="hasModelOptions ? 'Select model' : 'Loading models...'"
-              :disabled="!hasModelOptions"
+              :disabled="props.disabled || !hasModelOptions"
               button-class="input-control input-dropdown-button"
               :button-style="agentButtonStyle"
               popup-class="input-dropdown-popup"
@@ -137,7 +138,7 @@
             v-model="selectedThinkingChoice"
             :label="selectedThinkingLabel"
             :placeholder="hasThinkingOptions ? 'Select variant' : 'Loading...'"
-            :disabled="!hasThinkingOptions"
+            :disabled="props.disabled || !hasThinkingOptions"
             button-class="input-control input-dropdown-button"
             :button-style="agentButtonStyle"
             popup-class="input-dropdown-popup"
@@ -158,7 +159,7 @@
       <button
         type="button"
         class="input-button attach-button"
-        :disabled="props.canAttach === false"
+        :disabled="props.disabled || props.canAttach === false"
         @click="triggerFileInput"
       >
         <Icon icon="lucide:paperclip" :width="12" :height="12" /> Attach
@@ -167,7 +168,7 @@
         v-if="isThinking"
         type="button"
         class="input-button stop send-button"
-        :disabled="!canAbort"
+        :disabled="props.disabled || !canAbort"
         @click="$emit('abort')"
       >
         STOP
@@ -176,7 +177,7 @@
         v-else
         type="button"
         class="input-button primary send-button"
-        :disabled="!canSend"
+        :disabled="props.disabled || !canSend"
         @click="$emit('send')"
       >
         <Icon icon="lucide:send" :width="12" :height="12" /> Send
@@ -220,6 +221,7 @@ const props = defineProps<{
   commands: CommandOption[];
   attachments: Array<{ id: string; filename: string; mime: string; dataUrl: string }>;
   agentColor?: string;
+  disabled?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -264,6 +266,14 @@ const commandMatches = computed(() => {
 });
 
 const commandPopupOpen = computed(() => commandMatches.value.length > 0);
+
+watch(() => props.disabled, (disabled, prev) => {
+  if (prev && !disabled) {
+    nextTick(() => {
+      textareaRef.value?.focus();
+    });
+  }
+});
 
 watch(slashQuery, () => {
   activeCommandIndex.value = 0;
@@ -606,6 +616,10 @@ const inputMessageStyle = computed(() => {
   box-sizing: border-box;
 }
 
+.input-message:has(.input-textarea:disabled) {
+  opacity: 0.6;
+}
+
 .input-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -762,6 +776,10 @@ const inputMessageStyle = computed(() => {
   line-height: 1.2;
 }
 
+.input-textarea:disabled {
+  opacity: 0.6;
+}
+
 .input-textarea {
   resize: none;
   min-height: 1em;
@@ -913,6 +931,11 @@ const inputMessageStyle = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+.input-button:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 .send-button {

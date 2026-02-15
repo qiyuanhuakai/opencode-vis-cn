@@ -108,6 +108,7 @@
         <div class="input-resizer" @pointerdown="startInputResize"></div>
         <InputPanel
           ref="inputPanelRef"
+          :disabled="connectionState !== 'ready'"
           :can-send="canSend"
           :agent-options="agentOptions"
           :has-agent-options="hasAgentOptions"
