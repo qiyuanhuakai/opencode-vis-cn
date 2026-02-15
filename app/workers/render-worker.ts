@@ -1,6 +1,8 @@
 import MarkdownIt from 'markdown-it';
 import { fromHighlighter, type MarkdownItShikiSetupOptions } from '@shikijs/markdown-it/core';
 import { bundledLanguages, createHighlighter } from 'shiki/bundle/web';
+import { bundledLanguages as allBundledLanguages } from 'shiki/langs';
+import { transformerNotationDiff } from '@shikijs/transformers';
 
 type RenderRequest = {
   id: string;
@@ -79,7 +81,8 @@ async function tryLoadLanguage(
   if (failedLanguageCache.has(candidate)) return false;
   if (typeof highlighter.loadLanguage !== 'function') return false;
 
-  const loader = (bundledLanguages as Record<string, unknown>)[candidate];
+  const loader = (bundledLanguages as Record<string, unknown>)[candidate]
+    ?? (allBundledLanguages as Record<string, unknown>)[candidate];
   try {
     if (typeof loader === 'function') {
       const module = await (loader as LanguageLoader)();
@@ -789,6 +792,9 @@ function getMarkdownIt(highlighter: Highlighter, theme: string) {
         light: theme,
         dark: theme,
       },
+      transformers: [
+        transformerNotationDiff(),
+      ],
       langAlias: {},
     };
     cachedMdShikiOptions = shikiOptions;
