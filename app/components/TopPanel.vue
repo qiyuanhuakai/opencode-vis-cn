@@ -577,7 +577,7 @@ function handleOpenDirectory(close: () => void) {
 .tree-worktree-header,
 .tree-sandbox-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
@@ -585,8 +585,10 @@ function handleOpenDirectory(close: () => void) {
 
 .tree-header-main {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  column-gap: 4px;
+  row-gap: 0;
   min-width: 0;
   flex: 1 1 auto;
 }
@@ -607,11 +609,7 @@ function handleOpenDirectory(close: () => void) {
 }
 
 .tree-label {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-  align-items: flex-start;
+  display: contents;
 }
 
 .tree-label-name {
@@ -620,11 +618,17 @@ function handleOpenDirectory(close: () => void) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .tree-label-type {
   font-size: 10px;
   color: #64748b;
+  flex-basis: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tree-actions {
@@ -711,7 +715,7 @@ function handleOpenDirectory(close: () => void) {
   content: '';
   position: absolute;
   left: 15px;
-  top: 20px;
+  top: 13px;
   width: 7px;
   height: 0;
   border-top: 1px solid rgba(71, 85, 105, 0.5);
@@ -725,7 +729,7 @@ function handleOpenDirectory(close: () => void) {
   left: 15px;
   top: 0;
   width: 7px;
-  height: 20px;
+  height: 13px;
   border-left: 1px solid rgba(71, 85, 105, 0.5);
   border-bottom: 1px solid rgba(71, 85, 105, 0.5);
   border-bottom-left-radius: 4px;
@@ -752,7 +756,7 @@ function handleOpenDirectory(close: () => void) {
   content: '';
   position: absolute;
   left: 31px;
-  top: 50%;
+  top: 14px;
   width: 7px;
   height: 0;
   border-top: 1px solid rgba(71, 85, 105, 0.4);
@@ -766,7 +770,7 @@ function handleOpenDirectory(close: () => void) {
   left: 31px;
   top: 0;
   width: 7px;
-  height: 50%;
+  height: 14px;
   border-left: 1px solid rgba(71, 85, 105, 0.4);
   border-bottom: 1px solid rgba(71, 85, 105, 0.4);
   border-bottom-left-radius: 4px;
@@ -776,9 +780,11 @@ function handleOpenDirectory(close: () => void) {
 .tree-session-main {
   min-width: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  column-gap: 8px;
+  row-gap: 1px;
   flex: 1 1 auto;
 }
 
@@ -798,11 +804,7 @@ function handleOpenDirectory(close: () => void) {
 }
 
 .session-info {
-  min-width: 0;
-  flex: 1 1 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
+  display: contents;
 }
 
 .session-info-top {
@@ -810,12 +812,14 @@ function handleOpenDirectory(close: () => void) {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .session-time {
   font-size: 10px;
   color: #64748b;
   white-space: nowrap;
+  flex-basis: 100%;
 }
 
 .session-badge-archived {
