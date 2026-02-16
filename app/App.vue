@@ -199,7 +199,7 @@
               Retry
             </button>
             <button
-              v-if="uiInitState === 'loading'"
+              v-if="uiInitState === 'loading' && connectionState === 'connecting'"
               type="button"
               class="app-loading-retry app-loading-abort"
               @click="handleAbortInit"
@@ -6673,6 +6673,7 @@ async function startInitialization() {
     await fetchProviders();
     await fetchAgents();
   } catch (error) {
+    if (!initializationInFlight) return;
     ge.disconnect();
     const msg = toErrorMessage(error);
     connectionState.value = 'error';

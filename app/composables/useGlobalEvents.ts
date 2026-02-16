@@ -304,6 +304,7 @@ export function useGlobalEvents(baseUrl: string) {
     abortController?.abort();
     abortController = undefined;
     connectionResolved = false;
+    if (openRejector) openRejector(new Error('SSE connection aborted.'));
   }
 
   function on<K extends EventKey>(event: K, listener: (payload: GlobalEventMap[K]) => void): () => void;
