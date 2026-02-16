@@ -11,7 +11,7 @@
 </template>
 
 <script lang="ts" setup>
-import { computed, inject } from 'vue';
+import { computed, inject, onMounted, watch } from 'vue';
 import type { DropdownAPI } from '../Dropdown.vue';
 
 defineOptions({
@@ -38,6 +38,9 @@ const selectedValue = computed(() => {
 const isActive = computed(() =>
   Boolean(props.active || (props.value !== undefined && selectedValue.value === props.value)),
 );
+
+onMounted(() => api?.update());
+watch(() => props.value, () => api?.update());
 
 function onClick() {
   if (props.disabled) return;

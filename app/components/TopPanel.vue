@@ -41,21 +41,20 @@
           </template>
           <template #default="{ close }">
             <div class="tree-menu">
-              <div class="tree-search" @click.stop>
-                <Icon icon="lucide:search" class="search-icon" />
-                <input
-                  v-auto-focus
-                  v-model="searchQuery"
-                  type="text"
-                  placeholder="Search sessions, branches, directories..."
-                  class="search-input"
-                  @click.stop
-                  
-                />
-                <button v-if="searchQuery" type="button" class="clear-search" @click.stop="searchQuery = ''">
-                  <Icon icon="lucide:x" />
-                </button>
-              </div>
+              <DropdownSearch
+                v-model="searchQuery"
+                placeholder="Search sessions, branches, directories..."
+                class="tree-search"
+              >
+                <template #before>
+                  <Icon icon="lucide:search" class="search-icon" />
+                </template>
+                <template #after>
+                  <button v-if="searchQuery" type="button" class="clear-search" @click.stop="searchQuery = ''">
+                    <Icon icon="lucide:x" />
+                  </button>
+                </template>
+              </DropdownSearch>
 
               <div class="tree-content">
                 <div v-if="displayedTree.length === 0" class="tree-empty">
@@ -184,10 +183,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch, type Directive, nextTick, onBeforeUnmount, onMounted } from 'vue';
+import { computed, ref, watch, onBeforeUnmount, onMounted } from 'vue';
 import { Icon } from '@iconify/vue';
 import Dropdown from './Dropdown.vue';
 import DropdownItem from './Dropdown/Item.vue';
+import DropdownSearch from './Dropdown/Search.vue';
 
 export type TopPanelSession = {
   id: string;
@@ -257,6 +257,9 @@ const menuOpen = ref(false);
 const treeDropdownOpen = ref(false);
 
 watch(treeDropdownOpen, (open) => {
+  if (open) {
+    searchQuery.value = '';
+  }
   if (!open) emit('dropdown-closed');
 });
 
@@ -286,12 +289,7 @@ const MAX_SESSIONS = 5;
 const searchQuery = ref('');
 const isShiftPressed = ref(false);
 
-const vAutoFocus: Directive<HTMLElement> = {
-  mounted(el) {
-    searchQuery.value = '';
-    nextTick(() => el.focus());
-  },
-};
+
 
 const selectedDisplay = computed(() => {
   const sid = props.selectedSessionId;
@@ -568,25 +566,14 @@ function handleOpenDirectory(close: () => void) {
   color: #64748b;
 }
 
-.search-input {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid #334155;
+.tree-search :deep(.ui-dropdown-search-input) {
   border-radius: 8px;
-  background: rgba(30, 41, 59, 0.55);
-  color: #e2e8f0;
   font-size: 12px;
   padding: 6px 8px;
-  outline: none;
 }
 
-.search-input:focus {
-  border-color: #60a5fa;
+.tree-search :deep(.ui-dropdown-search-input):focus {
   background: rgba(30, 64, 175, 0.15);
-}
-
-.search-input::placeholder {
-  color: #64748b;
 }
 
 .clear-search {

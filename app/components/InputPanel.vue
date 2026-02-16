@@ -84,7 +84,6 @@
         <div class="input-field compact">
           <Dropdown
             v-model="modeValue"
-            :label="selectedAgentLabel"
             :placeholder="hasAgentOptions ? 'Select agent' : 'Loading agents...'"
             :disabled="props.disabled || !hasAgentOptions"
             button-class="input-control input-dropdown-button"
@@ -93,10 +92,8 @@
             title="Agent (Tab)"
             @update:open="handleModelDropdownOpenChange"
           >
-            <template #label>
-              <span class="ui-dropdown-label" :style="agentButtonLabelStyle">{{
-                selectedAgentLabel
-              }}</span>
+            <template #value="{ value: id }">
+              <span :style="agentValueStyle(id)">{{ findAgent(id)?.label }}</span>
             </template>
             <template #default>
               <div class="dropdown-list">
@@ -118,9 +115,7 @@
         <div class="input-field compact">
           <div ref="modelDropdownRef" class="input-dropdown-root">
             <Dropdown
-              ref="modelDropdownComponent"
               v-model="modelValue"
-              :label="selectedModelDisplayName"
               :placeholder="hasModelOptions ? 'Select model' : 'Loading models...'"
               :disabled="props.disabled || !hasModelOptions"
               button-class="input-control input-dropdown-button"
@@ -129,27 +124,16 @@
               title="Model (Ctrl-M)"
               @update:open="handleModelDropdownOpenChange"
             >
-              <template #label>
-                <div class="model-button-label">
-                  <span v-if="selectedModelProviderName" class="model-button-path">{{
-                    selectedModelProviderName
-                  }}</span>
-                  <span class="model-button-name">{{ selectedModelDisplayName }}</span>
-                </div>
+              <template #value="{ value: id }">
+                <span class="model-button-name">{{ findModelOption(id)?.displayName }}</span>
               </template>
               <template #default>
                 <div class="model-picker">
-                  <div class="model-search" @click.stop>
-                    <input
-                      v-auto-focus
-                      v-model="modelSearchQuery"
-                      type="text"
-                      placeholder="Search..."
-                      class="model-search-input"
-                      @click.stop
-                      @keydown="handleModelSearchKeydown"
-                    />
-                  </div>
+                  <DropdownSearch
+                    v-model="modelSearchQuery"
+                    placeholder="Search..."
+                    class="model-search"
+                  />
                   <div class="model-picker-list">
                     <div class="dropdown-list">
                       <div v-if="!hasModelOptions" class="dropdown-empty">Loading models...</div>
@@ -175,7 +159,6 @@
         <div class="input-field compact">
            <Dropdown
             v-model="thinkingKeyValue"
-            :label="selectedThinkingLabel"
             :placeholder="hasThinkingOptions ? 'Select variant' : 'Loading...'"
              :disabled="props.disabled || !hasThinkingOptions"
              button-class="input-control input-dropdown-button"
@@ -184,6 +167,7 @@
              title="Variant (Ctrl-, / Ctrl-.)"
              @update:open="handleModelDropdownOpenChange"
            >
+            <template #value="{ value: key }">{{ findThinkingChoice(key)?.label }}</template>
             <template #default>
               <div class="dropdown-list">
                 <div v-if="!hasThinkingOptions" class="dropdown-empty">Loading...</div>
@@ -231,10 +215,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch, type Directive } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { Icon } from '@iconify/vue';
 import Dropdown from './Dropdown.vue';
 import DropdownItem from './Dropdown/Item.vue';
+import DropdownSearch from './Dropdown/Search.vue';
 import { useMessages } from '../composables/useMessages';
 import { useSettings } from '../composables/useSettings';
 type ModelOption = {
@@ -290,15 +275,7 @@ const messageValue = computed({
 const textareaRef = ref<HTMLTextAreaElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const modelDropdownRef = ref<HTMLElement | null>(null);
-const modelDropdownComponent = ref<InstanceType<typeof Dropdown> | null>(null);
 const modelSearchQuery = ref('');
-
-const vAutoFocus: Directive<HTMLElement> = {
-  mounted(el) {
-    modelSearchQuery.value = '';
-    nextTick(() => el.focus());
-  },
-};
 
 const activeCommandIndex = ref(0);
 const acceptMime = 'image/png,image/jpeg,image/gif,image/webp';
@@ -474,32 +451,10 @@ function openModelPicker() {
   return true;
 }
 
-function handleModelSearchKeydown(e: KeyboardEvent) {
-  if (e.key === 'ArrowDown') {
-    e.preventDefault();
-    e.stopPropagation();
-    modelDropdownComponent.value?.moveHighlight('down');
-    return;
-  }
-  if (e.key === 'ArrowUp') {
-    e.preventDefault();
-    e.stopPropagation();
-    modelDropdownComponent.value?.moveHighlight('up');
-    return;
-  }
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    e.stopPropagation();
-    modelDropdownComponent.value?.selectHighlighted();
-    return;
-  }
-  if (e.key === 'Escape') {
-    return;
-  }
-}
-
 function handleModelDropdownOpenChange(open: boolean) {
-  if (!open) {
+  if (open) {
+    modelSearchQuery.value = '';
+  } else {
     nextTick(() => {
       textareaRef.value?.focus();
     });
@@ -668,26 +623,24 @@ const agentButtonStyle = computed(() => {
   return { borderColor: color };
 });
 
-const agentButtonLabelStyle = computed(() => {
-  const color = selectedAgent.value?.color;
-  return color ? { color } : undefined;
-});
+function findAgent(id: unknown): AgentOption | undefined {
+  if (id == null) return undefined;
+  return (props.agentOptions ?? []).find((a) => a.id === id);
+}
+
+function agentValueStyle(id: unknown) {
+  const agent = findAgent(id);
+  return agent?.color ? { color: agent.color } : undefined;
+}
 
 function agentOptionNameStyle(agent: AgentOption) {
   return agent.color ? { color: agent.color } : undefined;
 }
 
-const selectedModelOption = computed(() =>
-  (props.modelOptions ?? []).find((option) => option.id === props.selectedModel),
-);
-
-const selectedModelDisplayName = computed(() => selectedModelOption.value?.displayName ?? '');
-
-const selectedModelProviderName = computed(() => {
-  const opt = selectedModelOption.value;
-  if (!opt) return '';
-  return opt.providerLabel ?? opt.providerID ?? '';
-});
+function findModelOption(id: unknown): ModelOption | undefined {
+  if (id == null) return undefined;
+  return (props.modelOptions ?? []).find((m) => m.id === id);
+}
 
 const thinkingChoices = computed<ThinkingChoice[]>(() =>
   (props.thinkingOptions ?? []).map((option) => ({
@@ -710,6 +663,11 @@ const thinkingKeyValue = computed({
 });
 
 const selectedThinkingLabel = computed(() => selectedThinkingChoice.value?.label ?? '');
+
+function findThinkingChoice(key: unknown): ThinkingChoice | undefined {
+  if (key == null) return undefined;
+  return thinkingChoices.value.find((c) => c.key === key);
+}
 
 const groupedModelOptions = computed(() => {
   const grouped = new Map<string, { providerID: string; label: string; models: ModelOption[] }>();
@@ -850,7 +808,6 @@ const inputMessageStyle = computed(() => {
 .input-field.compact {
   flex: 0 0 auto;
   min-width: 0;
-  max-width: 150px;
 }
 
 :deep(.input-control) {
@@ -985,25 +942,11 @@ const inputMessageStyle = computed(() => {
   padding: 0 0 4px;
 }
 
-.model-search-input {
-  width: 100%;
-  border: 1px solid #334155;
+.model-search :deep(.ui-dropdown-search-input) {
   border-radius: 6px;
-  background: rgba(30, 41, 59, 0.55);
-  color: #e2e8f0;
   font-size: 11px;
   font-family: inherit;
   padding: 4px 6px;
-  outline: none;
-  box-sizing: border-box;
-}
-
-.model-search-input:focus {
-  border-color: #60a5fa;
-}
-
-.model-search-input::placeholder {
-  color: #64748b;
 }
 
 .model-dropdown-item {

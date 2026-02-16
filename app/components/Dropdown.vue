@@ -16,17 +16,28 @@
         @keydown="onKeyDown"
       >
         <slot name="label">
-          <span class="ui-dropdown-label">{{ displayLabel }}</span>
+           <div class="ui-dropdown-label">
+            <template v-if="props.modelValue != null">
+              <slot name="value" :value="props.modelValue">{{ displayLabel }}</slot>
+            </template>
+            <template v-else>{{ displayLabel }}</template>
+            <!-- for box size adjustment -->
+            <div v-if="!props.label" class="ui-dropdown-sizer">
+              <div v-for="(value, idx) in candidateValues" :key="idx">
+                <slot name="value" :value="value">{{ value }}</slot>
+              </div>
+            </div>
+          </div>
         </slot>
         <Icon class="ui-dropdown-icon" :icon="props.menuIcon ?? 'lucide:chevron-down'" :width="12" :height="12" />
       </button>
     </slot>
     <div
-      v-if="isActive"
       ref="menu"
       class="ui-dropdown-menu"
-      :class="props.popupClass"
+      :class="[{ 'is-open': isActive }, props.popupClass]"
       :style="[props.popupStyle, menuStyle]"
+      :inert="!isActive || undefined"
       role="listbox"
       title=""
       tabindex="-1"
@@ -57,6 +68,8 @@ export interface DropdownAPI {
   close: () => void;
   selected: unknown | undefined;
   update: () => Promise<void>;
+  moveHighlight: (direction: 'up' | 'down') => void;
+  selectHighlighted: () => boolean;
 }
 
 const props = defineProps<{
@@ -82,6 +95,7 @@ const emit = defineEmits<{
 const root = ref<HTMLElement | null>(null);
 const menu = ref<HTMLElement | null>(null);
 const isActive = ref(false);
+const candidateValues = ref<T[]>([]);
 const anchorName = `--ui-dropdown-anchor-${Math.random().toString(36).slice(2, 10)}`;
 
 const rootStyle = computed<StyleValue>(() => ({
@@ -98,6 +112,23 @@ const displayLabel = computed(() => {
   return props.placeholder ?? 'Select';
 });
 
+function updateCandidateValues() {
+  if (!menu.value) return;
+  const candidates = menu.value.querySelectorAll(
+    '.ui-input-candidate-item[data-value]',
+  ) as NodeListOf<Element>;
+  const results: T[] = [];
+  candidates.forEach((item) => {
+    try {
+      const value = JSON.parse(item.getAttribute('data-value') ?? 'null');
+      if (value != null) results.push(value);
+    } catch {
+      // skip invalid values
+    }
+  });
+  candidateValues.value = results;
+}
+
 function toggle() {
   if (props.disabled) return;
   isActive.value = !isActive.value;
@@ -112,10 +143,13 @@ watch(isActive, (active) => {
   emit('update:open', active);
   if (active) {
     nextTick(() => {
-      menu.value?.focus();
+      const autoFocusEl = menu.value?.querySelector('[autofocus]');
+      if (autoFocusEl instanceof HTMLElement) autoFocusEl.focus();
+      else menu.value?.focus();
       highlightSelected();
     });
   }
+  updateCandidateValues();
 });
 
 watch(() => props.open, (value) => {
@@ -227,12 +261,52 @@ function handlePointerDown(event: PointerEvent) {
   close();
 }
 
+// When the dropdown is open and the candidate items change (e.g. after filtering),
+// ensure that a valid highlight exists. If the previously highlighted item is gone,
+// automatically highlight the first available candidate.
+let observer: MutationObserver | null = null;
+
+function onMenuMutation() {
+  if (!isActive.value) return;
+  const items = getCandidateItems();
+  if (items.length === 0) {
+    clearHighlight();
+    return;
+  }
+  const hasHighlight = items.some((el) => el.getAttribute('aria-selected') === 'true');
+  if (!hasHighlight) {
+    highlightItem(items[0]);
+  }
+}
+
+function startObserver() {
+  stopObserver();
+  if (!menu.value) return;
+  observer = new MutationObserver(onMenuMutation);
+  observer.observe(menu.value, { childList: true, subtree: true });
+}
+
+function stopObserver() {
+  observer?.disconnect();
+  observer = null;
+}
+
+watch(isActive, (active) => {
+  if (active) {
+    nextTick(startObserver);
+  } else {
+    stopObserver();
+  }
+});
+
 onMounted(() => {
   window.addEventListener('pointerdown', handlePointerDown);
+  nextTick(() => updateCandidateValues());
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('pointerdown', handlePointerDown);
+  stopObserver();
 });
 
 const api = reactive({
@@ -243,7 +317,12 @@ const api = reactive({
   },
   close,
   selected: computed(() => props.modelValue),
-  async update() {},
+  async update() {
+    await nextTick();
+    updateCandidateValues();
+  },
+  moveHighlight,
+  selectHighlighted,
 });
 
 provide('x-selectable', api);
@@ -277,6 +356,7 @@ defineExpose({ moveHighlight, selectHighlighted });
   font-family: inherit;
   outline: none;
   cursor: pointer;
+  text-align: left;
 }
 
 .ui-dropdown-button:disabled {
@@ -287,6 +367,13 @@ defineExpose({ moveHighlight, selectHighlighted });
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ui-dropdown-sizer {
+  display: block;
+  width: 100%;
+  height: 0;
+  overflow: hidden;
 }
 
 .ui-dropdown-icon {
@@ -313,5 +400,10 @@ defineExpose({ moveHighlight, selectHighlighted });
   box-shadow: 0 12px 24px rgba(2, 6, 23, 0.45);
   overflow: auto;
   z-index: 120;
+}
+
+.ui-dropdown-menu:not(.is-open) {
+  visibility: hidden;
+  pointer-events: none;
 }
 </style>
