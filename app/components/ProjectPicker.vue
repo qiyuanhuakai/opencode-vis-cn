@@ -1,6 +1,6 @@
 <template>
-  <div v-if="open" class="modal-backdrop" @click.self="handleClose">
-    <div class="modal" role="dialog" aria-modal="true">
+  <dialog ref="dialogRef" class="modal-backdrop" @close="$emit('close')" @cancel.prevent @click.self="dialogRef?.close()">
+    <div class="modal">
       <Dropdown
         ref="dropdownRef"
         :open="dropdownOpen"
@@ -48,7 +48,7 @@
         </div>
       </Dropdown>
     </div>
-  </div>
+  </dialog>
 </template>
 
 <script setup lang="ts">
@@ -78,6 +78,7 @@ const emit = defineEmits<{
 }>();
 
 const dropdownRef = ref<InstanceType<typeof Dropdown> | null>(null);
+const dialogRef = ref<HTMLDialogElement | null>(null);
 const inputRef = ref<HTMLInputElement | null>(null);
 const rawInput = ref('');
 const homePath = ref('');
@@ -145,9 +146,15 @@ watch(currentDir, (dir) => {
 watch(
   () => props.open,
   (open) => {
-    if (!open) return;
-    dropdownOpen.value = true;
-    void initPicker();
+    const el = dialogRef.value;
+    if (!el) return;
+    if (open) {
+      if (!el.open) el.showModal();
+      dropdownOpen.value = true;
+      void initPicker();
+    } else if (el.open) {
+      el.close();
+    }
   },
 );
 
@@ -364,19 +371,19 @@ function handleOpen() {
   const clean = dir.replace(/\/+$/, '');
   if (clean) {
     emit('select', clean);
-    emit('close');
+    handleClose();
   }
 }
 
 function handleClose() {
-  emit('close');
+  dialogRef.value?.close();
 }
 
 function handleDropdownOpenChange(value: boolean) {
   dropdownOpen.value = value;
   if (!value && props.open) {
     // Dropdown tried to close (Escape on menu, outside click) — close the modal
-    emit('close');
+    handleClose();
   }
 }
 
@@ -419,13 +426,28 @@ function ensureTrailingSlash(p: string): string {
 
 <style scoped>
 .modal-backdrop {
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  color: inherit;
   position: fixed;
   inset: 0;
-  background: rgba(2, 6, 23, 0.65);
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 50;
+}
+
+.modal-backdrop:not([open]) {
+  display: none;
+}
+
+.modal-backdrop::backdrop {
+  background: rgba(2, 6, 23, 0.65);
 }
 
 .modal {

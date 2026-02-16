@@ -1,9 +1,15 @@
 <template>
-  <div v-if="open" class="modal-backdrop" @click.self="$emit('close')">
-    <div class="modal" role="dialog" aria-modal="true" tabindex="0">
+  <dialog
+    ref="dialogRef"
+    class="modal-backdrop"
+    @close="$emit('close')"
+    @cancel.prevent
+    @click.self="dialogRef?.close()"
+  >
+    <div class="modal">
       <header class="modal-header">
         <div class="modal-title">Settings</div>
-        <button type="button" class="modal-close-button" @click="$emit('close')">
+        <button type="button" class="modal-close-button" @click="dialogRef?.close()">
           <Icon icon="lucide:x" :width="14" :height="14" />
         </button>
       </header>
@@ -20,14 +26,15 @@
         </div>
       </div>
     </div>
-  </div>
+  </dialog>
 </template>
 
 <script setup lang="ts">
+import { ref, watch } from 'vue';
 import { Icon } from '@iconify/vue';
 import { useSettings } from '../composables/useSettings';
 
-defineProps<{
+const props = defineProps<{
   open: boolean;
 }>();
 
@@ -35,18 +42,44 @@ defineEmits<{
   (event: 'close'): void;
 }>();
 
+const dialogRef = ref<HTMLDialogElement | null>(null);
 const { enterToSend } = useSettings();
+
+watch(() => props.open, (open) => {
+  const el = dialogRef.value;
+  if (!el) return;
+  if (open) {
+    if (!el.open) el.showModal();
+  } else if (el.open) {
+    el.close();
+  }
+});
 </script>
 
 <style scoped>
 .modal-backdrop {
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  color: inherit;
   position: fixed;
   inset: 0;
-  background: rgba(2, 6, 23, 0.65);
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 50;
+}
+
+.modal-backdrop:not([open]) {
+  display: none;
+}
+
+.modal-backdrop::backdrop {
+  background: rgba(2, 6, 23, 0.65);
 }
 
 .modal {
