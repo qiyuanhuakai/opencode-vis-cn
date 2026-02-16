@@ -79,8 +79,7 @@
           <div v-if="command.description" class="command-desc">{{ command.description }}</div>
         </div>
       </div>
-    </div>
-    <div class="input-toolbar">
+      <div class="input-toolbar">
       <div class="input-selects">
         <div class="input-field compact">
           <Dropdown
@@ -89,7 +88,6 @@
             :placeholder="hasAgentOptions ? 'Select agent' : 'Loading agents...'"
             :disabled="props.disabled || !hasAgentOptions"
             button-class="input-control input-dropdown-button"
-            :button-style="agentButtonStyle"
             popup-class="input-dropdown-popup"
             auto-close
             title="Agent (Tab)"
@@ -126,7 +124,6 @@
               :placeholder="hasModelOptions ? 'Select model' : 'Loading models...'"
               :disabled="props.disabled || !hasModelOptions"
               button-class="input-control input-dropdown-button"
-              :button-style="agentButtonStyle"
               popup-class="input-dropdown-popup"
               auto-close
               title="Model (Ctrl-M)"
@@ -180,10 +177,9 @@
             v-model="thinkingKeyValue"
             :label="selectedThinkingLabel"
             :placeholder="hasThinkingOptions ? 'Select variant' : 'Loading...'"
-            :disabled="props.disabled || !hasThinkingOptions"
-            button-class="input-control input-dropdown-button"
-            :button-style="agentButtonStyle"
-            popup-class="input-dropdown-popup"
+             :disabled="props.disabled || !hasThinkingOptions"
+             button-class="input-control input-dropdown-button"
+             popup-class="input-dropdown-popup"
              auto-close
              title="Variant (Ctrl-, / Ctrl-.)"
              @update:open="handleModelDropdownOpenChange"
@@ -217,7 +213,7 @@
         title="Stop (ESC x2)"
         @click="$emit('abort')"
       >
-        <Icon icon="lucide:circle-x" :width="16" :height="16" />
+        <Icon icon="ph:stop-fill" :width="16" :height="16" />
       </button>
       <button
         v-else
@@ -229,6 +225,7 @@
       >
         <Icon icon="lucide:send" :width="16" :height="16" />
       </button>
+    </div>
     </div>
   </div>
 </template>
@@ -770,13 +767,13 @@ function reset() {
 defineExpose({ focus, reset });
 
 const inputMessageStyle = computed(() => {
-  if (!props.agentColor) return { borderColor: '#334155' };
+  if (!props.agentColor) return undefined;
   const color = props.agentColor;
-  // If it is 7 chars (#RRGGBB), append alpha for border transparency
+  // Tint the background with agent color at low opacity
   if (color.startsWith('#') && color.length === 7) {
-    return { borderColor: `${color}A6` }; // ~0.65 alpha
+    return { '--agent-tint': `${color}18` }; // ~0.09 alpha overlay
   }
-  return { borderColor: color };
+  return undefined;
 });
 </script>
 
@@ -785,17 +782,11 @@ const inputMessageStyle = computed(() => {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 10px;
   width: 100%;
   height: 100%;
   min-height: 0;
   box-sizing: border-box;
-  padding: 10px;
-  background: rgba(15, 23, 42, 0.92);
   color: #e2e8f0;
-  border: 1px solid #334155;
-  border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(2, 6, 23, 0.45);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
 }
 
@@ -808,10 +799,12 @@ const inputMessageStyle = computed(() => {
   flex-direction: column;
   align-items: stretch;
   overflow: visible;
-  background: #0b1320;
+  background-color: rgba(15, 23, 42, 0.92);
+  background-image: linear-gradient(var(--agent-tint, transparent), var(--agent-tint, transparent));
   border: 1px solid #334155;
-  border-radius: 8px;
+  border-radius: 20px;
   box-sizing: border-box;
+  box-shadow: 0 12px 32px rgba(2, 6, 23, 0.45);
 }
 
 .input-message:has(.input-textarea:disabled) {
@@ -822,20 +815,23 @@ const inputMessageStyle = computed(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+  padding: 4px 8px 8px;
+  border-top: 1px solid rgba(51, 65, 85, 0.35);
+  flex: 0 0 auto;
 }
 
 .input-selects {
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
-  gap: 8px;
+  gap: 4px;
   flex-wrap: wrap;
   align-items: center;
 }
 
 .input-selects .input-control {
-  height: 32px;
+  height: 28px;
 }
 
 
@@ -852,21 +848,28 @@ const inputMessageStyle = computed(() => {
 }
 
 .input-field.compact {
-  flex: 1 1 160px;
-  min-width: 160px;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 150px;
 }
 
 :deep(.input-control) {
   width: 100%;
-  background: #0b1320;
-  color: #e2e8f0;
-  border: 1px solid #334155;
+  background: transparent;
+  color: #94a3b8;
+  border: 1px solid transparent;
   border-radius: 8px;
-  padding: 6px 8px;
-  font-size: 12px;
+  padding: 4px 8px;
+  font-size: 11px;
   font-family: inherit;
   outline: none;
   box-sizing: border-box;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+:deep(.input-control):hover:not(:disabled) {
+  background: rgba(51, 65, 85, 0.35);
+  color: #e2e8f0;
 }
 
 :deep(.input-control):focus-visible {
@@ -874,11 +877,12 @@ const inputMessageStyle = computed(() => {
 }
 
 :deep(.input-dropdown-button) {
-  height: 32px;
+  height: 28px;
 }
 
 :deep(.input-dropdown-popup) {
   max-height: 280px;
+  min-width: 200px;
   outline: none;
 }
 
@@ -1029,8 +1033,8 @@ const inputMessageStyle = computed(() => {
 .input-textarea {
   resize: none;
   min-height: 1em;
-  font-size: 13px;
-  line-height: 1.2;
+  font-size: 14px;
+  line-height: 1.5;
   display: block;
   width: 100%;
   flex: 1 1 auto;
@@ -1042,7 +1046,7 @@ const inputMessageStyle = computed(() => {
   background: transparent;
   color: #e2e8f0;
   outline: none;
-  padding: 8px;
+  padding: 12px 16px;
   box-sizing: border-box;
   font-family: inherit;
 }
@@ -1232,12 +1236,12 @@ const inputMessageStyle = computed(() => {
 }
 
 .input-button {
-  background: #1e293b;
-  color: #e2e8f0;
-  border: 1px solid #334155;
+  background: transparent;
+  color: #94a3b8;
+  border: 1px solid transparent;
   border-radius: 8px;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   font-size: 12px;
   cursor: pointer;
@@ -1245,6 +1249,12 @@ const inputMessageStyle = computed(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.input-button:hover:not(:disabled) {
+  background: rgba(51, 65, 85, 0.35);
+  color: #e2e8f0;
 }
 
 .input-button:disabled {
@@ -1252,26 +1262,35 @@ const inputMessageStyle = computed(() => {
   cursor: default;
 }
 
-.send-button {
+.input-button.primary {
+  background: transparent;
+  border-color: transparent;
+  border-radius: 50%;
+  width: 32px;
   height: 32px;
+  color: #94a3b8;
 }
 
-.input-button.primary {
-  background: #2563eb;
-  border-color: #1d4ed8;
+.input-button.primary:hover:not(:disabled) {
+  background: rgba(37, 99, 235, 0.2);
+  color: #60a5fa;
 }
 
 .input-button.stop {
-  background: #dc2626;
-  border-color: #b91c1c;
-  color: #fef2f2;
+  background: transparent;
+  border-color: transparent;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  color: #94a3b8;
 }
 
-.send-button {
-  margin-left: auto;
+.input-button.stop:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.2);
+  color: #f87171;
 }
 
 .attach-button {
-  height: 32px;
+  margin-left: auto;
 }
 </style>
