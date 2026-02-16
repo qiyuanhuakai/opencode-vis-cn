@@ -381,6 +381,7 @@ function onResizeEnd(e: PointerEvent) {
   contain: layout paint;
   display: flex;
   flex-direction: column;
+  max-width: 100vw;
   background: color-mix(in srgb, var(--window-color, #3a4150) 12%, #1a1d24);
   border: 1px solid var(--window-color, #3a4150);
   border-radius: 5px;
