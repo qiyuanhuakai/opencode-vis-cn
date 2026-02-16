@@ -172,6 +172,15 @@ export function useGlobalEvents(baseUrl: string) {
     });
   }
 
+  function scheduleReconnect(options: ConnectionOptions) {
+    if (disconnectRequested || reconnectTimer) return;
+    reconnectAttempt += 1;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      void connect(options);
+    }, 1000);
+  }
+
   function readStream(reader: ReadableStreamDefaultReader<Uint8Array>, options: ConnectionOptions) {
     const decoder = new TextDecoder();
     let buffer = '';
@@ -206,30 +215,68 @@ export function useGlobalEvents(baseUrl: string) {
         emitter.emit('connection.error', { message: String(error) });
         abortController = undefined;
         connectionResolved = false;
-        if (!disconnectRequested && !reconnectTimer) {
-          reconnectAttempt += 1;
-          reconnectTimer = setTimeout(() => {
-            reconnectTimer = null;
-            void connect(options);
-          }, 1000);
-        }
+        scheduleReconnect(options);
         return;
       }
 
       emitter.emit('connection.error', { message: 'SSE stream closed.' });
       abortController = undefined;
       connectionResolved = false;
-
-      if (!disconnectRequested && !reconnectTimer) {
-        reconnectAttempt += 1;
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          void connect(options);
-        }, 1000);
-      }
+      scheduleReconnect(options);
     }
 
     void loop();
+  }
+
+  function startConnection(options: ConnectionOptions, isReconnect: boolean) {
+    const effectiveBaseUrl = options.baseUrl || baseUrl;
+    const headers: Record<string, string> = {};
+    if (options.authorization) {
+      headers['Authorization'] = options.authorization;
+    }
+
+    void (async () => {
+      try {
+        const response = await fetch(`${effectiveBaseUrl}/global/event`, {
+          signal: abortController!.signal,
+          headers,
+        });
+
+        if (response.status === 401) {
+          abortController = undefined;
+          emitter.emit('connection.error', { message: 'Authentication failed.', statusCode: 401 });
+          if (openRejector) openRejector(new Error('Authentication failed.'));
+          return;
+        }
+
+        if (!response.ok || !response.body) {
+          abortController = undefined;
+          emitter.emit('connection.error', { message: `HTTP ${response.status}` });
+          if (openRejector) openRejector(new Error(`HTTP ${response.status}`));
+          scheduleReconnect(options);
+          return;
+        }
+
+        reconnectAttempt = 0;
+        connectionResolved = true;
+        emitter.emit('connection.open', {});
+        if (isReconnect) {
+          emitter.emit('connection.reconnected', {});
+        }
+        if (openResolver) openResolver();
+
+        readStream(response.body.getReader(), options);
+      } catch (error) {
+        abortController = undefined;
+        connectionResolved = false;
+
+        if (disconnectRequested) return;
+
+        emitter.emit('connection.error', { message: String(error) });
+        if (openRejector) openRejector(error instanceof Error ? error : new Error(String(error)));
+        scheduleReconnect(options);
+      }
+    })();
   }
 
   async function connect(options: ConnectionOptions = {}) {
@@ -243,74 +290,7 @@ export function useGlobalEvents(baseUrl: string) {
     abortController = new AbortController();
     connectionResolved = false;
 
-    const headers: Record<string, string> = {};
-    if (options.authorization) {
-      headers['Authorization'] = options.authorization;
-    }
-
-    const effectiveBaseUrl = options.baseUrl || baseUrl;
-    try {
-      const response = await fetch(`${effectiveBaseUrl}/global/event`, {
-        signal: abortController.signal,
-        headers,
-      });
-
-      if (response.status === 401) {
-        abortController = undefined;
-        emitter.emit('connection.error', { message: 'Authentication failed.', statusCode: 401 });
-        if (openRejector) {
-          openRejector(new Error('Authentication failed.'));
-        }
-        return;
-      }
-
-      if (!response.ok || !response.body) {
-        abortController = undefined;
-        emitter.emit('connection.error', { message: `HTTP ${response.status}` });
-        if (openRejector) {
-          openRejector(new Error(`HTTP ${response.status}`));
-        }
-        if (!disconnectRequested && !reconnectTimer) {
-          reconnectAttempt += 1;
-          reconnectTimer = setTimeout(() => {
-            reconnectTimer = null;
-            void connect(options);
-          }, 1000);
-        }
-        return;
-      }
-
-      reconnectAttempt = 0;
-      connectionResolved = true;
-      emitter.emit('connection.open', {});
-      if (isReconnect) {
-        emitter.emit('connection.reconnected', {});
-      }
-      if (openResolver) {
-        openResolver();
-      }
-
-      // Read stream in background — do NOT await so connect() can return
-      readStream(response.body.getReader(), options);
-    } catch (error) {
-      abortController = undefined;
-      connectionResolved = false;
-
-      if (disconnectRequested) return;
-
-      emitter.emit('connection.error', { message: String(error) });
-      if (openRejector) {
-        openRejector(error instanceof Error ? error : new Error(String(error)));
-      }
-
-      if (!reconnectTimer) {
-        reconnectAttempt += 1;
-        reconnectTimer = setTimeout(() => {
-          reconnectTimer = null;
-          void connect(options);
-        }, 1000);
-      }
-    }
+    startConnection(options, isReconnect);
 
     if (options.failFast) await waitForOpen(options.timeoutMs ?? 5000);
   }
