@@ -20,6 +20,7 @@
           @archive-session="archiveSession"
           @select-session="handleTopPanelSessionSelect"
           @open-directory="openProjectPicker"
+          @edit-project="handleEditProject"
           @open-settings="isSettingsOpen = true"
           @logout="handleLogout"
           @dropdown-closed="focusInput"
@@ -220,6 +221,17 @@
       :open="isSettingsOpen"
       @close="isSettingsOpen = false"
     />
+    <ProjectSettingsDialog
+      :open="!!editingProject"
+      :project-id="editingProject?.projectId ?? ''"
+      :worktree="editingProject?.worktree ?? ''"
+      :name="editingProjectMeta?.name"
+      :icon-color="editingProjectMeta?.icon?.color"
+      :icon-override="editingProjectMeta?.icon?.override"
+      :commands-start="editingProjectMeta?.commands?.start"
+      @close="editingProject = null"
+      @save="handleSaveProject"
+    />
   </div>
 </template>
 
@@ -252,6 +264,7 @@ import SidePanel from './components/SidePanel.vue';
 import Welcome from './components/Welcome.vue';
 import TopPanel, { type TopPanelNotificationSession, type TopPanelWorktree } from './components/TopPanel.vue';
 import SettingsModal from './components/SettingsModal.vue';
+import ProjectSettingsDialog from './components/ProjectSettingsDialog.vue';
 import PermissionContent from './components/ToolWindow/Permission.vue';
 import QuestionContent from './components/ToolWindow/Question.vue';
 import FileViewerContent from './components/FileViewer.vue';
@@ -562,8 +575,25 @@ type ProjectInfo = {
   worktree?: string;
   sandboxes?: string[];
   color?: string;
-  icon?: { color?: string };
+  name?: string;
+  icon?: { url?: string; override?: string; color?: string };
+  commands?: { start?: string };
 };
+
+const PROJECT_COLOR_HEX: Record<string, string> = {
+  pink: '#e34ba9',
+  mint: '#95f3d9',
+  orange: '#ff802b',
+  purple: '#9d5bd2',
+  cyan: '#369eff',
+  lime: '#c4f042',
+};
+
+function resolveProjectColorHex(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  const trimmed = raw.trim();
+  return PROJECT_COLOR_HEX[trimmed] ?? trimmed;
+}
 
 type SessionInfo = {
   id: string;
@@ -715,7 +745,8 @@ const selectedProjectId = computed(() => {
   return sandbox?.projectID ?? '';
 });
 const currentProjectColor = computed(() => {
-  const pid = selectedProjectId.value;
+  void sessionGraphVersion.value;
+  const pid = sessionGraphStore.resolveProjectIDForDirectory(projectDirectory.value);
   return pid ? projectColorById.value[pid] : undefined;
 });
 const activeDirectory = ref('');
@@ -753,9 +784,15 @@ const homePath = ref('');
 const serverWorktreePath = ref('');
 const worktreeNameByDirectory = ref<Record<string, string>>({});
 const projectColorById = ref<Record<string, string>>({});
+const projectMetaById = ref<Record<string, ProjectInfo>>({});
 const loadingWorktreeNameDirectories = new Set<string>();
 const initialQuery = readQuerySelection();
 const isProjectPickerOpen = ref(false);
+const editingProject = ref<{ projectId: string; worktree: string } | null>(null);
+const editingProjectMeta = computed(() => {
+  const pid = editingProject.value?.projectId;
+  return pid ? projectMetaById.value[pid] : undefined;
+});
 const isSettingsOpen = ref(false);
 const selectedMode = ref('build');
 const selectedModel = ref('');
@@ -923,6 +960,7 @@ const topPanelTreeData = computed<TopPanelWorktree[]>(() => {
         directory: worktreeDirectory,
         label: replaceHomePrefix(worktreeDirectory),
         name,
+        projectId: projectId || undefined,
         projectColor,
         sandboxes: sandboxEntries,
         latestUpdated: latestSandboxUpdated,
@@ -2209,9 +2247,11 @@ async function fetchProjects(directory?: string) {
     const list = Array.isArray(data) ? data : [];
     list.forEach((project) => {
       const color = project.color ?? project.icon?.color;
-      if (typeof color === 'string' && color.trim()) {
-        projectColorById.value[project.id] = color.trim();
+      const hex = resolveProjectColorHex(color);
+      if (hex) {
+        projectColorById.value[project.id] = hex;
       }
+      projectMetaById.value[project.id] = project;
       const worktree = typeof project.worktree === 'string' ? project.worktree : '';
       const sandboxes = Array.isArray(project.sandboxes)
         ? project.sandboxes.filter((entry): entry is string => typeof entry === 'string')
@@ -2229,9 +2269,11 @@ async function fetchProjects(directory?: string) {
 
 function upsertProject(next: ProjectInfo) {
   const color = next.color ?? next.icon?.color;
-  if (typeof color === 'string' && color.trim()) {
-    projectColorById.value[next.id] = color.trim();
+  const hex = resolveProjectColorHex(color);
+  if (hex) {
+    projectColorById.value[next.id] = hex;
   }
+  projectMetaById.value[next.id] = next;
   const worktree = typeof next.worktree === 'string' ? next.worktree : '';
   const sandboxes = Array.isArray(next.sandboxes)
     ? next.sandboxes.filter((entry): entry is string => typeof entry === 'string')
@@ -2241,6 +2283,33 @@ function upsertProject(next: ProjectInfo) {
     sessionGraphStore.setProjectRoot(next.id, worktree);
   }
   markSessionGraphChanged();
+}
+
+function handleEditProject(payload: { projectId: string; worktree: string }) {
+  editingProject.value = payload;
+}
+
+async function handleSaveProject(payload: {
+  projectId: string;
+  worktree: string;
+  name: string;
+  icon: { color: string; override: string };
+  commands: { start: string };
+}) {
+  try {
+    const result = await opencodeApi.updateProject(credentials.baseUrl.value, payload.projectId, {
+      directory: payload.worktree,
+      name: payload.name,
+      icon: payload.icon,
+      commands: payload.commands,
+    });
+    if (result && typeof result === 'object') {
+      upsertProject(result as ProjectInfo);
+    }
+    editingProject.value = null;
+  } catch (error) {
+    console.error('Failed to update project:', error);
+  }
 }
 
 function resolveDirectory(directory: string, baseDir: string) {

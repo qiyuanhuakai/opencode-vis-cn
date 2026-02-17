@@ -400,3 +400,23 @@ export async function rejectQuestion(baseUrl: string, requestId: string, directo
     params: { directory },
   });
 }
+
+export function updateProject(
+  baseUrl: string,
+  projectId: string,
+  payload: {
+    directory?: string;
+    name?: string;
+    icon?: { url?: string; override?: string; color?: string };
+    commands?: { start?: string };
+  },
+) {
+  return sendJson(baseUrl, `/project/${projectId}`, 'PATCH', {
+    params: { directory: payload.directory },
+    body: {
+      name: payload.name,
+      icon: payload.icon,
+      commands: payload.commands,
+    },
+  }) as Promise<unknown>;
+}

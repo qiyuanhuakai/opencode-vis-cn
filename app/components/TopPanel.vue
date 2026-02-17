@@ -75,6 +75,15 @@
                         <small v-if="worktree.name" class="tree-label-type" :title="worktree.directory">{{ shortenPath(worktree.directory) }}</small>
                       </div>
                     </div>
+                    <button
+                      v-if="worktree.projectId && worktree.projectId !== 'global'"
+                      type="button"
+                      class="tree-action-button worktree-settings"
+                      title="Project settings"
+                      @click.stop="$emit('edit-project', { projectId: worktree.projectId, worktree: worktree.directory })"
+                    >
+                      <Icon icon="lucide:settings" :width="14" :height="14" />
+                    </button>
                   </div>
 
                   <div v-for="sandbox in worktree.sandboxes" :key="sandbox.directory" class="tree-sandbox">
@@ -208,6 +217,7 @@ export type TopPanelWorktree = {
   directory: string;
   label: string;
   name?: string;
+  projectId?: string;
   projectColor?: string;
   sandboxes: TopPanelSandbox[];
 };
@@ -248,6 +258,7 @@ const emit = defineEmits<{
   (event: 'archive-session', value: string): void;
   (event: 'open-directory'): void;
   (event: 'open-shell'): void;
+  (event: 'edit-project', payload: { projectId: string; worktree: string }): void;
   (event: 'open-settings'): void;
   (event: 'logout'): void;
   (event: 'dropdown-closed'): void;
@@ -282,8 +293,8 @@ function onMenuSelect(value: unknown) {
   else if (value === 'logout') emit('logout');
 }
 
-const MAX_WORKTREES = 5;
-const MAX_SANDBOXES = 3;
+const MAX_WORKTREES = Infinity;
+const MAX_SANDBOXES = Infinity;
 const MAX_SESSIONS = 5;
 
 const searchQuery = ref('');
@@ -348,18 +359,14 @@ const displayedTree = computed(() => {
       .filter((worktree): worktree is TopPanelWorktree => worktree !== null);
   } else {
     worktrees = worktrees
-      .map((worktree) => {
-        const sandboxes = worktree.sandboxes
-          .map((sandbox) => ({
-            ...sandbox,
-            sessions: sandbox.sessions.filter((session) => !session.archivedAt),
-          }))
-          .filter((sandbox) => sandbox.sessions.length > 0);
-
-        if (sandboxes.length === 0) return null;
-        return { ...worktree, sandboxes };
-      })
-      .filter((worktree): worktree is TopPanelWorktree => worktree !== null);
+      .map((worktree) => ({
+        ...worktree,
+        sandboxes: worktree.sandboxes.map((sandbox) => ({
+          ...sandbox,
+          sessions: sandbox.sessions.filter((session) => !session.archivedAt),
+        })),
+      }))
+      .filter((worktree) => worktree.sandboxes.some((sandbox) => sandbox.sessions.length > 0));
   }
 
   return worktrees.slice(0, MAX_WORKTREES).map((worktree) => ({
@@ -695,6 +702,10 @@ function handleOpenDirectory(close: () => void) {
 
 .tree-action-button:hover {
   background: #1d2a45;
+}
+
+.tree-action-button.worktree-settings {
+  color: #94a3b8;
 }
 
 .tree-action-button.danger {
