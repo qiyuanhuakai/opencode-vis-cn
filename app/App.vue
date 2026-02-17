@@ -345,7 +345,6 @@ const ATTACHMENT_MIME_ALLOWLIST = new Set(['image/png', 'image/jpeg', 'image/gif
 
 
 type TodoItem = {
-  id: string;
   content: string;
   status: string;
   priority: string;
@@ -5084,13 +5083,11 @@ function parsePatchTextBlocks(patchText: string) {
 function normalizeTodoItem(value: unknown): TodoItem | null {
   if (!value || typeof value !== 'object') return null;
   const record = value as Record<string, unknown>;
-  const id = typeof record.id === 'string' ? record.id.trim() : '';
   const content = typeof record.content === 'string' ? record.content.trim() : '';
   const status = typeof record.status === 'string' ? record.status.trim() : '';
   const priority = typeof record.priority === 'string' ? record.priority.trim() : '';
-  if (!id || !content) return null;
+  if (!content) return null;
   return {
-    id,
     content,
     status: status || 'pending',
     priority: priority || 'medium',
@@ -6979,7 +6976,7 @@ onMounted(() => {
     sessionScope.on('todo.updated', ({ sessionID, todos }) => {
       todosBySessionId.value = {
         ...todosBySessionId.value,
-        [sessionID]: todos,
+        [sessionID]: normalizeTodoItems(todos),
       };
       if (todoErrorBySessionId.value[sessionID]) {
         const nextErrors = { ...todoErrorBySessionId.value };

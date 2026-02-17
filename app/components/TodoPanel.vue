@@ -24,8 +24,8 @@
           <div v-if="session.error" class="todo-error">{{ session.error }}</div>
           <TransitionGroup v-else appear name="fade" tag="ul" class="todo-list">
             <li
-              v-for="todo in session.todos"
-              :key="todo.id"
+              v-for="(todo, index) in session.todos"
+              :key="index"
               class="todo-item"
               :class="[{ 'is-leaving': todo.leaving }, `is-${todo.status}`]"
             >
@@ -44,7 +44,6 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 type TodoEntry = {
-  id: string;
   content: string;
   status: string;
   priority: string;
@@ -86,8 +85,8 @@ const displayTotalCount = computed(() =>
   displaySessions.value.reduce((sum, session) => sum + session.todos.length, 0),
 );
 
-function timerKey(sessionId: string, todoId: string) {
-  return `${sessionId}:${todoId}`;
+function timerKey(sessionId: string, content: string) {
+  return `${sessionId}:${content}`;
 }
 
 function clearRemoveTimer(key: string) {
@@ -103,8 +102,8 @@ function pruneEmptySessions() {
   );
 }
 
-function removeTodoAfterDelay(sessionId: string, todoId: string) {
-  const key = timerKey(sessionId, todoId);
+function removeTodoAfterDelay(sessionId: string, content: string) {
+  const key = timerKey(sessionId, content);
   if (removeTimers.has(key)) return;
   const timer = window.setTimeout(() => {
     removeTimers.delete(key);
@@ -113,7 +112,7 @@ function removeTodoAfterDelay(sessionId: string, todoId: string) {
         if (session.sessionId !== sessionId) return session;
         return {
           ...session,
-          todos: session.todos.filter((todo) => todo.id !== todoId),
+          todos: session.todos.filter((todo) => todo.content !== content),
         };
       })
       .filter((session) => session.todos.length > 0 || Boolean(session.error));
@@ -134,18 +133,18 @@ watch(
           loading: false,
           error: undefined,
           todos: displaySession.todos.map((todo) => {
-            removeTodoAfterDelay(displaySession.sessionId, todo.id);
+            removeTodoAfterDelay(displaySession.sessionId, todo.content);
             return { ...todo, leaving: true };
           }),
         };
       }
-      const existingByTodoId = new Map(displaySession.todos.map((todo) => [todo.id, todo]));
-      const nextTodoIds = new Set(nextSession.todos.map((todo) => todo.id));
+      const existingByContent = new Map(displaySession.todos.map((todo) => [todo.content, todo]));
+      const nextContents = new Set(nextSession.todos.map((todo) => todo.content));
       const mergedTodos: DisplayTodo[] = [];
       nextSession.todos.forEach((todo) => {
-        const key = timerKey(nextSession.sessionId, todo.id);
+        const key = timerKey(nextSession.sessionId, todo.content);
         clearRemoveTimer(key);
-        const existing = existingByTodoId.get(todo.id);
+        const existing = existingByContent.get(todo.content);
         if (existing) {
           mergedTodos.push({ ...existing, ...todo, leaving: false });
           return;
@@ -153,8 +152,8 @@ watch(
         mergedTodos.push({ ...todo, leaving: false });
       });
       displaySession.todos.forEach((todo) => {
-        if (nextTodoIds.has(todo.id)) return;
-        removeTodoAfterDelay(displaySession.sessionId, todo.id);
+        if (nextContents.has(todo.content)) return;
+        removeTodoAfterDelay(displaySession.sessionId, todo.content);
         mergedTodos.push({ ...todo, leaving: true });
       });
       return {

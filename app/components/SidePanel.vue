@@ -57,7 +57,6 @@ import TodoList from './TodoList.vue';
 import TreeView, { type TreeNode } from './TreeView.vue';
 
 type TodoItem = {
-  id: string;
   content: string;
   status: string;
   priority: string;
