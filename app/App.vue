@@ -3014,10 +3014,12 @@ async function fetchPendingQuestions(directory?: string) {
 }
 
 function clearNotificationSession(sessionId: string) {
-  if (!sessionId || !pendingNotificationsBySessionId.value.has(sessionId)) return;
-  const next = new Map(pendingNotificationsBySessionId.value);
-  next.delete(sessionId);
-  pendingNotificationsBySessionId.value = next;
+  if (!sessionId) return;
+  if (pendingNotificationsBySessionId.value.has(sessionId)) {
+    const next = new Map(pendingNotificationsBySessionId.value);
+    next.delete(sessionId);
+    pendingNotificationsBySessionId.value = next;
+  }
   notificationSessionOrder.value = notificationSessionOrder.value.filter((id) => id !== sessionId);
 }
 
@@ -3053,6 +3055,11 @@ function showBrowserNotification(sessionId: string, type: 'permission' | 'questi
 
 function addPendingNotification(sessionId: string, requestId: string, type: 'permission' | 'question' | 'idle') {
   if (!sessionId || !requestId) return;
+  const session = sessionGraphStore.value.getSession(
+    sessionId,
+    resolveProjectIdForSession(sessionId) || undefined,
+  );
+  if (!session || session.parentID) return;
   ensureBrowserNotificationPermission();
   const next = new Map(pendingNotificationsBySessionId.value);
   const requestSet = new Set(next.get(sessionId) ?? []);
