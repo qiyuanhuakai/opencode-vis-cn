@@ -476,16 +476,7 @@ const commandMatches = computed(() => {
 
 const commandPopupOpen = computed(() => commandMatches.value.length > 0);
 
-watch(
-  () => props.disabled,
-  (disabled, prev) => {
-    if (prev && !disabled) {
-      nextTick(() => {
-        textareaRef.value?.focus();
-      });
-    }
-  },
-);
+
 
 watch(slashQuery, () => {
   activeCommandIndex.value = 0;
