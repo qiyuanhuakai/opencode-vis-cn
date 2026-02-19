@@ -375,10 +375,14 @@ export function createStateBuilder() {
   function upsertSession(info: SessionMutationInfo): string | null {
     if (!info?.id) return null;
     const existing = findSessionEntry(info.id);
-    const resolvedProjectId = resolveProjectIdForDirectory(info.directory);
+    const resolvedProjectId = info.projectID?.trim();
     if (!resolvedProjectId) return null;
 
-    const project = ensureProject(resolvedProjectId, info.directory || existing?.directory || '/');
+    let project = state.projects[resolvedProjectId];
+    if (!project) {
+      project = { id: resolvedProjectId, worktree: '', sandboxes: {} };
+      state.projects[resolvedProjectId] = project;
+    }
     const incomingParentId = info.parentID?.trim() || undefined;
     const previous = existing?.session;
     const parentID = incomingParentId ?? previous?.parentID;
@@ -538,19 +542,6 @@ export function createStateBuilder() {
     return changed;
   }
 
-  function findProjectIdByDirectoryInInput(projects: ProjectInfo[], directory: string): string {
-    const normalizedDirectory = normalizeDirectory(directory);
-    if (!normalizedDirectory) return '';
-    for (const project of projects) {
-      const worktree = normalizeDirectory(project.worktree);
-      if (worktree && worktree === normalizedDirectory) return project.id;
-      for (const sandbox of sanitizeDirectoryList(project.sandboxes)) {
-        if (sandbox === normalizedDirectory) return project.id;
-      }
-    }
-    return '';
-  }
-
   function applyProjects(projects: ProjectInfo[]) {
     (Array.isArray(projects) ? projects : []).forEach((project) => {
       applyProject(project);
@@ -564,12 +555,11 @@ export function createStateBuilder() {
     });
   }
 
-  function applyStatuses(statusMap: Record<string, { type?: string }>, projectId: string) {
-    if (!projectId) return;
+  function applyStatuses(statusMap: Record<string, { type?: string }>) {
     Object.entries(statusMap ?? {}).forEach(([sessionId, info]) => {
       const type = info?.type;
       if (!type || !isSessionStatus(type)) return;
-      const entry = findSessionEntry(sessionId, projectId);
+      const entry = findSessionEntry(sessionId);
       if (!entry) return;
       if (entry.session.status === type) return;
       entry.session.status = type;
@@ -678,37 +668,6 @@ export function createStateBuilder() {
     return changed;
   }
 
-  function rebuild(
-    projects: ProjectInfo[],
-    sessionsByDir: Map<string, SessionInfo[]>,
-    statusesByDir: Map<string, Record<string, { type?: string }>>,
-  ): ServerState {
-    const builder = createStateBuilder();
-    builder.applyProjects(projects);
-
-    sessionsByDir.forEach((sessions) => {
-      builder.applySessions(sessions);
-    });
-
-    statusesByDir.forEach((statusMap, directory) => {
-      const fromInput = findProjectIdByDirectoryInInput(projects, directory);
-      let projectId = fromInput;
-      if (!projectId) {
-        const firstSessionId = Object.keys(statusMap ?? {})[0];
-        if (firstSessionId) {
-          projectId = builder.findSessionProject(firstSessionId)?.projectId ?? '';
-        }
-      }
-      if (!projectId) return;
-      builder.applyStatuses(statusMap, projectId);
-    });
-
-    builder.getDefaultProjectId();
-    state = builder.getState();
-    rebuildIndexes();
-    return state;
-  }
-
   function getState() {
     return state;
   }
@@ -723,34 +682,6 @@ export function createStateBuilder() {
     }
     if (state.projects.global) return 'global';
     return projectIds[0] ?? 'global';
-  }
-
-  function findSessionProject(
-    sessionId: string,
-  ): { projectId: string; directory: string } | undefined {
-    if (!sessionId) return undefined;
-    const direct = sessionLocationById.get(sessionId);
-    if (direct) {
-      return {
-        projectId: direct.projectId,
-        directory: direct.directory,
-      };
-    }
-    const entry = findSessionEntry(sessionId);
-    if (!entry) return undefined;
-    const normalizedDirectory = normalizeDirectory(entry.directory) || '/';
-    const resolved = {
-      projectId: entry.projectId,
-      directory: normalizedDirectory,
-    };
-    sessionLocationById.set(sessionId, resolved);
-    return resolved;
-  }
-
-  function resolveRootSessionId(sessionId: string): string {
-    const resolved = findSessionProject(sessionId);
-    if (!resolved) return sessionId;
-    return resolveRootSessionIdInProject(sessionId, resolved.projectId);
   }
 
   function resolveRootSessionIdForProject(projectId: string, sessionId: string): string {
@@ -810,12 +741,9 @@ export function createStateBuilder() {
     applySessionMutated,
     applySessionRemoved,
     resolveProjectIdForDirectory,
-    rebuild,
     getState,
     getProject,
     getDefaultProjectId,
-    findSessionProject,
-    resolveRootSessionId,
     resolveRootSessionIdForProject,
     isSessionTreeIdle,
   };

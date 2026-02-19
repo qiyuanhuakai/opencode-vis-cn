@@ -13,6 +13,10 @@ export type TabToWorkerMessage =
   | {
       type: 'selection.active';
       key: string;
+    }
+  | {
+      type: 'load-sessions';
+      directory: string;
     };
 
 export type WorkerToTabMessage =
