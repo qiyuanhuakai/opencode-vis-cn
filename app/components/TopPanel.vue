@@ -86,17 +86,17 @@
                 >
                   <div class="tree-worktree-header">
                     <div class="tree-header-main">
-                      <Icon icon="lucide:package" class="tree-header-icon" />
+                      <Icon
+                        :icon="worktree.projectId === 'global' ? 'lucide:globe' : 'lucide:package'"
+                        class="tree-header-icon"
+                      />
                       <div class="tree-label">
                         <span class="tree-label-name" :title="worktree.directory">{{
-                          worktree.name || worktree.label
+                          worktree.name || directoryBasename(worktree.directory)
                         }}</span>
-                        <small
-                          v-if="worktree.name"
-                          class="tree-label-type"
-                          :title="worktree.directory"
-                          >{{ shortenPath(worktree.directory) }}</small
-                        >
+                        <small class="tree-label-type" :title="worktree.directory">{{
+                          shortenPath(worktree.directory)
+                        }}</small>
                       </div>
                     </div>
                     <button
@@ -122,17 +122,19 @@
                   >
                     <div class="tree-sandbox-header">
                       <div class="tree-header-main">
-                        <Icon icon="lucide:git-branch" class="tree-header-icon" />
+                        <Icon
+                          :icon="
+                            worktree.projectId === 'global' ? 'lucide:folder' : 'lucide:git-branch'
+                          "
+                          class="tree-header-icon"
+                        />
                         <div class="tree-label">
                           <span class="tree-label-name" :title="sandbox.directory">{{
-                            sandbox.branch || shortenPath(sandbox.directory)
+                            sandbox.branch || directoryBasename(sandbox.directory)
                           }}</span>
-                          <small
-                            v-if="sandbox.branch"
-                            class="tree-label-type"
-                            :title="sandbox.directory"
-                            >{{ shortenPath(sandbox.directory) }}</small
-                          >
+                          <small class="tree-label-type" :title="sandbox.directory">{{
+                            shortenPath(sandbox.directory)
+                          }}</small>
                         </div>
                       </div>
                       <div class="tree-actions">
@@ -414,7 +416,7 @@ const selectedDisplay = computed(() => {
     for (const sandbox of worktree.sandboxes) {
       const session = sandbox.sessions.find((candidate) => candidate.id === sid);
       if (!session) continue;
-      const branch = sandbox.branch || shortenPath(sandbox.directory);
+      const branch = sandbox.branch || directoryBasename(sandbox.directory);
       const title = session.title || session.slug || session.id;
       return { branch, title, status: session.status };
     }
@@ -515,6 +517,10 @@ function shortenPath(path: string) {
     return replaced || '~';
   }
   return path;
+}
+
+function directoryBasename(path: string) {
+  return path.replace(/\/+$/, '').split('/').pop() ?? '';
 }
 
 function sessionStatusIcon(status: TopPanelSession['status']) {

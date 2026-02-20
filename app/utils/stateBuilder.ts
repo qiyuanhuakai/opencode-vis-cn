@@ -11,6 +11,7 @@ const PROJECT_COLOR_HEX: Record<string, string> = {
 };
 
 const CHILD_SESSION_PRUNE_TTL_MS = 20 * 60 * 1000;
+const GLOBAL_PROJECT_NAME = 'global';
 
 type SessionStatusType = Exclude<SessionState['status'], undefined>;
 
@@ -65,10 +66,18 @@ function isSessionStatus(value: string): value is SessionStatusType {
   return value === 'busy' || value === 'idle' || value === 'retry';
 }
 
+function resolveProjectName(projectId: string, name?: string) {
+  const trimmed = name?.trim();
+  if (trimmed) return trimmed;
+  if (projectId === 'global') return GLOBAL_PROJECT_NAME;
+  return undefined;
+}
+
 function createDefaultProject(id: string, worktree: string): ProjectState {
   const normalizedWorktree = normalizeDirectory(worktree) || '/';
   return {
     id,
+    name: resolveProjectName(id),
     worktree: normalizedWorktree,
     sandboxes: {
       [normalizedWorktree]: {
@@ -472,7 +481,7 @@ export function createStateBuilder() {
       changed = true;
     }
 
-    const nextName = project.name?.trim() || undefined;
+    const nextName = resolveProjectName(project.id, project.name);
     if (target.name !== nextName) {
       target.name = nextName;
       changed = true;
@@ -673,15 +682,15 @@ export function createStateBuilder() {
   }
 
   function getDefaultProjectId() {
-    const projectIds = Object.keys(state.projects);
-    if (projectIds.length === 0) {
+    if (!state.projects.global) {
       const global = createDefaultProject('global', '/');
       state.projects.global = global;
       rebuildIndexes();
-      return 'global';
     }
-    if (state.projects.global) return 'global';
-    return projectIds[0] ?? 'global';
+    if (!state.projects.global.name?.trim()) {
+      state.projects.global.name = GLOBAL_PROJECT_NAME;
+    }
+    return 'global';
   }
 
   function resolveRootSessionIdForProject(projectId: string, sessionId: string): string {
