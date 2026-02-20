@@ -172,6 +172,10 @@ export function listSessions(
   ) as Promise<unknown>;
 }
 
+export function getSession(sessionId: string, directory?: string, request?: RequestOptions) {
+  return getJson(`/session/${sessionId}`, { directory }, request) as Promise<unknown>;
+}
+
 export function getSessionChildren(
   sessionId: string,
   directory?: string,
@@ -248,6 +252,13 @@ export function revertSession(sessionId: string, messageId: string, directory?: 
   return sendJson(`/session/${sessionId}/revert`, 'POST', {
     params: { directory },
     body: { messageID: messageId },
+  }) as Promise<unknown>;
+}
+
+export function unrevertSession(sessionId: string, directory?: string) {
+  return sendJson(`/session/${sessionId}/unrevert`, 'POST', {
+    params: { directory },
+    body: {},
   }) as Promise<unknown>;
 }
 
