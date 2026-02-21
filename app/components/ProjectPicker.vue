@@ -45,7 +45,12 @@
 
         <DropdownItem v-if="showCurrentEntry" value=".">./</DropdownItem>
         <DropdownItem v-if="showParentEntry" value="..">../</DropdownItem>
-        <DropdownItem v-for="item in suggestions" :key="item.name" :value="item.name">
+        <DropdownItem
+          v-for="item in suggestions"
+          :key="item.name"
+          :value="item.name"
+          :disabled="isDrillDownLocked"
+        >
           {{ item.name }}/
         </DropdownItem>
         <div v-if="!isLoading && suggestions.length === 0 && currentDir" class="picker-empty">
@@ -96,6 +101,7 @@ const isLoading = ref(false);
 const error = ref('');
 const allEntries = ref<FileNode[]>([]);
 const dropdownOpen = ref(false);
+const hasGitDirectory = ref(false);
 let fetchController: AbortController | null = null;
 let fetchRequestId = 0;
 
@@ -160,6 +166,8 @@ const hasDirectoryEntries = computed(() =>
 
 const canOpen = computed(() => Boolean(resolveOpenDirectory()));
 
+const isDrillDownLocked = computed(() => hasGitDirectory.value);
+
 // ---------------------------------------------------------------------------
 // Watchers
 // ---------------------------------------------------------------------------
@@ -167,6 +175,7 @@ const canOpen = computed(() => Boolean(resolveOpenDirectory()));
 watch(currentDir, (dir) => {
   if (!dir) {
     allEntries.value = [];
+    hasGitDirectory.value = false;
     return;
   }
   void fetchDirectory(dir);
@@ -194,6 +203,7 @@ watch(
 function initPicker() {
   error.value = '';
   allEntries.value = [];
+  hasGitDirectory.value = false;
   rawInput.value = '';
 
   const initial = homePrefix.value || '/';
@@ -226,24 +236,34 @@ async function fetchDirectory(dir: string) {
 
   try {
     const cleanDir = dir.replace(/\/+$/, '') || '/';
-    const { directory, path } = splitFileContentDirectoryAndPath(cleanDir, null);
-    const data = (await opencodeApi.listFiles(
-      {
-        directory,
-        path,
-      },
-      { signal: controller.signal },
-    )) as FileNode[];
+    const [data, gitEntries] = await Promise.all([
+      listDirectory(cleanDir, controller.signal),
+      listDirectory(`${cleanDir}/.git`, controller.signal),
+    ]);
     if (requestId !== fetchRequestId) return;
-    allEntries.value = Array.isArray(data) ? data : [];
+    allEntries.value = data;
+    hasGitDirectory.value = gitEntries.length > 0;
   } catch (err) {
     if ((err as Error).name === 'AbortError') return;
     if (requestId !== fetchRequestId) return;
     error.value = err instanceof Error ? err.message : String(err);
     allEntries.value = [];
+    hasGitDirectory.value = false;
   } finally {
     if (requestId === fetchRequestId) isLoading.value = false;
   }
+}
+
+async function listDirectory(dir: string, signal: AbortSignal) {
+  const { directory, path } = splitFileContentDirectoryAndPath(dir, null);
+  const data = (await opencodeApi.listFiles(
+    {
+      directory,
+      path,
+    },
+    { signal },
+  )) as FileNode[];
+  return Array.isArray(data) ? data : [];
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +328,9 @@ function handleTab(reverse = false) {
   // Collect Tab completion candidates (`./` is intentionally excluded).
   const names: string[] = [];
   if (showParentEntry.value && hasDirectoryEntries.value) names.push('..');
-  for (const s of suggestions.value) names.push(s.name);
+  if (!isDrillDownLocked.value) {
+    for (const s of suggestions.value) names.push(s.name);
+  }
 
   if (names.length === 0) return;
 
@@ -370,6 +392,7 @@ function handleItemSelect(value: unknown) {
   if (value === '..') {
     goUp();
   } else {
+    if (isDrillDownLocked.value) return;
     appendToPath(value);
   }
   nextTick(() => {
@@ -466,6 +489,10 @@ function resolveOpenDirectory(): string | null {
     if (dir === '/') return null;
     const parent = dir.replace(/[^/]+\/$/, '') || '/';
     return cleanDirectoryPath(parent);
+  }
+
+  if (isDrillDownLocked.value) {
+    return null;
   }
 
   const matched = allEntries.value.find(
