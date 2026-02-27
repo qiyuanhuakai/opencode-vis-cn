@@ -583,9 +583,12 @@ const commandPopupDismissed = ref(false);
 const commandPopupOpen = computed(
   () => !commandPopupDismissed.value && commandMatches.value.length > 0,
 );
-watch(() => messageValue.value, () => {
-  commandPopupDismissed.value = false;
-});
+watch(
+  () => messageValue.value,
+  () => {
+    commandPopupDismissed.value = false;
+  },
+);
 
 function handleCommandSelect(name: unknown) {
   if (typeof name === 'string') applyCommandSelection(name);

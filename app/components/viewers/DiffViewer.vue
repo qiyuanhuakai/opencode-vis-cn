@@ -1,0 +1,231 @@
+<template>
+  <div class="diff-viewer-root">
+    <div v-if="hasFileTabs" class="viewer-tabs">
+      <button
+        v-for="(tab, i) in diffTabs"
+        :key="tab.file"
+        type="button"
+        class="viewer-tab"
+        :class="{ active: i === activeFileIndex }"
+        @click="activeFileIndex = i"
+      >
+        {{ basename(tab.file) }}
+      </button>
+    </div>
+
+    <div class="viewer-tabs">
+      <button
+        v-for="mode in primaryModes"
+        :key="mode.id"
+        type="button"
+        class="viewer-tab"
+        :class="{ active: mode.id === primaryMode }"
+        @click="primaryMode = mode.id"
+      >
+        {{ mode.label }}
+      </button>
+    </div>
+
+    <div v-if="showSubTabs" class="viewer-tabs viewer-tabs-sub">
+      <button
+        type="button"
+        class="viewer-tab"
+        :class="{ active: contentMode === 'rendered' }"
+        @click="contentMode = 'rendered'"
+      >
+        Rendered
+      </button>
+      <button
+        type="button"
+        class="viewer-tab"
+        :class="{ active: contentMode === 'source' }"
+        @click="contentMode = 'source'"
+      >
+        Source
+      </button>
+    </div>
+
+    <div class="viewer-body">
+      <DiffRenderer
+        v-if="primaryMode === 'diff'"
+        :path="activeFilePath"
+        :diff-code="activeBefore"
+        :diff-after="activeAfter"
+        :diff-patch="activeDiffPatch"
+        :gutter-mode="diffGutterMode"
+        :lang="lang"
+        :theme="theme"
+        @rendered="emit('rendered')"
+      />
+      <MarkdownRenderer
+        v-else-if="showMarkdownContent"
+        :code="activeText"
+        lang="markdown"
+        :theme="theme"
+        @rendered="emit('rendered')"
+      />
+      <CodeRenderer
+        v-else
+        :path="activeFilePath"
+        :file-content="activeText"
+        :lang="activeLanguage"
+        :theme="theme"
+        gutter-mode="default"
+        @rendered="emit('rendered')"
+      />
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue';
+import { guessLanguageFromPath } from '../ToolWindow/utils';
+import CodeRenderer from '../renderers/CodeRenderer.vue';
+import DiffRenderer from '../renderers/DiffRenderer.vue';
+import MarkdownRenderer from '../renderers/MarkdownRenderer.vue';
+
+type PrimaryMode = 'original' | 'modified' | 'diff';
+type ContentMode = 'rendered' | 'source';
+
+const props = defineProps<{
+  path?: string;
+  diffCode?: string;
+  diffAfter?: string;
+  diffPatch?: string;
+  diffTabs?: Array<{ file: string; before: string; after: string }>;
+  gutterMode?: 'none' | 'double';
+  lang?: string;
+  theme?: string;
+}>();
+
+const emit = defineEmits<{
+  (event: 'rendered'): void;
+}>();
+
+const activeFileIndex = ref(0);
+const primaryMode = ref<PrimaryMode>('diff');
+const contentMode = ref<ContentMode>('rendered');
+
+const hasFileTabs = computed(() => !!props.diffTabs && props.diffTabs.length > 1);
+const hasBeforeAfter = computed(() => {
+  if (props.diffTabs && props.diffTabs.length > 0) return true;
+  return props.diffAfter != null;
+});
+
+const primaryModes = computed<Array<{ id: PrimaryMode; label: string }>>(() => {
+  if (!hasBeforeAfter.value) return [{ id: 'diff', label: 'Diff' }];
+  return [
+    { id: 'original', label: 'Original' },
+    { id: 'modified', label: 'Modified' },
+    { id: 'diff', label: 'Diff' },
+  ];
+});
+
+watch(
+  primaryModes,
+  (modes) => {
+    const valid = modes.some((mode) => mode.id === primaryMode.value);
+    if (!valid && modes[0]) primaryMode.value = modes[0].id;
+  },
+  { immediate: true },
+);
+
+const activeEntry = computed(() => {
+  const tabs = props.diffTabs;
+  if (!tabs || tabs.length === 0) {
+    return {
+      file: props.path ?? '',
+      before: props.diffCode ?? '',
+      after: props.diffAfter ?? '',
+    };
+  }
+  return tabs[activeFileIndex.value] ?? tabs[0];
+});
+
+const activeFilePath = computed(() => activeEntry.value.file || props.path || '');
+const activeBefore = computed(() => activeEntry.value.before ?? '');
+const activeAfter = computed(() => activeEntry.value.after ?? '');
+const activeDiffPatch = computed(() =>
+  props.diffTabs && props.diffTabs.length > 0 ? undefined : props.diffPatch,
+);
+
+const activeText = computed(() => {
+  if (primaryMode.value === 'original') return activeBefore.value;
+  if (primaryMode.value === 'modified') return activeAfter.value;
+  return '';
+});
+
+const activeLanguage = computed(() => guessLanguageFromPath(activeFilePath.value));
+const isMarkdownFile = computed(() => activeLanguage.value === 'markdown');
+const showSubTabs = computed(() => {
+  if (primaryMode.value === 'diff') return false;
+  return isMarkdownFile.value;
+});
+const showMarkdownContent = computed(() => {
+  if (primaryMode.value === 'diff') return false;
+  return isMarkdownFile.value && contentMode.value === 'rendered';
+});
+
+const diffGutterMode = computed<'none' | 'double'>(() => props.gutterMode ?? 'double');
+
+function basename(filepath: string) {
+  return filepath.split('/').pop() ?? filepath;
+}
+</script>
+
+<style scoped>
+.diff-viewer-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.viewer-tabs {
+  display: flex;
+  gap: 0;
+  background: rgba(26, 29, 36, 0.95);
+  border-bottom: 1px solid rgba(90, 100, 120, 0.35);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+}
+
+.viewer-tabs-sub {
+  background: rgba(20, 24, 30, 0.95);
+}
+
+.viewer-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.viewer-tab {
+  border: 0;
+  background: transparent;
+  color: #8a8f9a;
+  font-size: 11px;
+  font-family: inherit;
+  padding: 3px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.viewer-tab:hover {
+  color: #cbd5e1;
+}
+
+.viewer-tab.active {
+  color: #e2e8f0;
+  border-bottom-color: #60a5fa;
+}
+
+.viewer-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+</style>

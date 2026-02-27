@@ -373,8 +373,9 @@ export function useAutoScroller(
     el.removeEventListener('scrollend', onScrollEnd);
     const clearPointerInteraction = (el as HTMLElement & { __clearPointerInteraction?: () => void })
       .__clearPointerInteraction;
-    const wheelIntentHandler = (el as HTMLElement & { __wheelIntentHandler?: (e: WheelEvent) => void })
-      .__wheelIntentHandler;
+    const wheelIntentHandler = (
+      el as HTMLElement & { __wheelIntentHandler?: (e: WheelEvent) => void }
+    ).__wheelIntentHandler;
     const touchIntentHandler = (el as HTMLElement & { __touchIntentHandler?: () => void })
       .__touchIntentHandler;
     const pointerDownIntentHandler = (

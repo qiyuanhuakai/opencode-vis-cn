@@ -561,7 +561,9 @@ export function extractFileRead(
         const diff =
           editCode !== undefined && editAfter !== undefined
             ? ''
-            : (typeof metadata?.diff === 'string' ? metadata.diff : '');
+            : typeof metadata?.diff === 'string'
+              ? metadata.diff
+              : '';
         if (!diff && editAfter === undefined) return null;
         const editPath = helpers.resolveReadWritePath(input, metadata, state);
         const editLang = helpers.guessLanguageFromPath(editPath);

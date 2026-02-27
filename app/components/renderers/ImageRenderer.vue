@@ -26,7 +26,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 
-const props = defineProps<{
+defineProps<{
   src: string;
   alt?: string;
 }>();
@@ -53,35 +53,16 @@ function handleWheel(e: WheelEvent) {
   const delta = -Math.sign(e.deltaY) * 0.1;
   const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale.value + delta * scale.value));
 
-  // Calculate cursor position relative to the image center to zoom towards cursor
-  // This is a simplified version, keeping zoom centered for now to avoid complexity with offset calculation
-  // relative to the transformed element without getting bounding client rects constantly.
-  // For a robust implementation we would need getBoundingClientRect().
-
-  // Let's implement cursor-centered zoom properly:
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const x = e.clientX - rect.left;
   const y = e.clientY - rect.top;
-
-  // Center of container
   const cx = rect.width / 2;
   const cy = rect.height / 2;
-
-  // Cursor offset from center
   const dx = x - cx;
   const dy = y - cy;
 
-  // Adjust translate to keep the point under cursor stable
-  // old_pos = (point - translate) / old_scale
-  // new_pos = (point - new_translate) / new_scale
-  // we want old_pos == new_pos => (point - translate) / old_scale = (point - new_translate) / new_scale
-  // point - new_translate = (point - translate) * (new_scale / old_scale)
-  // new_translate = point - (point - translate) * (new_scale / old_scale)
-
-  // Here point is (dx, dy) relative to center, and translate is (translateX, translateY)
   translateX.value = dx - (dx - translateX.value) * (newScale / scale.value);
   translateY.value = dy - (dy - translateY.value) * (newScale / scale.value);
-
   scale.value = newScale;
 }
 
@@ -141,7 +122,7 @@ function handleLoad() {
 }
 
 .image-wrapper {
-  transform-origin: 50% 50%; /* Zoom from center context */
+  transform-origin: 50% 50%;
   will-change: transform;
   display: flex;
   align-items: center;
@@ -152,7 +133,7 @@ function handleLoad() {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  pointer-events: none; /* Let pointer events pass to container for drag */
+  pointer-events: none;
   user-select: none;
 }
 

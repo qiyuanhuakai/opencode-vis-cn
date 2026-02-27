@@ -273,7 +273,6 @@ import {
 import { bundledThemes } from 'shiki/bundle/web';
 import { Terminal } from '@xterm/xterm';
 import InputPanel from './components/InputPanel.vue';
-import ImageViewer from './components/ImageViewer.vue';
 import OutputPanel from './components/OutputPanel.vue';
 import ProjectPicker from './components/ProjectPicker.vue';
 import hexdump from '@kikuchan/hexdump';
@@ -292,7 +291,8 @@ import TopPanel, {
 } from './components/TopPanel.vue';
 import SettingsModal from './components/SettingsModal.vue';
 import ProjectSettingsDialog from './components/ProjectSettingsDialog.vue';
-import FileViewerContent from './components/FileViewer.vue';
+import ContentViewer from './components/viewers/ContentViewer.vue';
+import DiffViewer from './components/viewers/DiffViewer.vue';
 import ShellContent from './components/ToolWindow/Shell.vue';
 import {
   formatGlobToolTitle,
@@ -3311,7 +3311,7 @@ function openDebugSessionViewer() {
   const pos = getFileViewerPosition(0.12, 0.08);
   if (fw.has(key)) fw.close(key);
   fw.open(key, {
-    component: FileViewerContent,
+    component: ContentViewer,
     props: {
       fileContent: content,
       lang: 'text',
@@ -3424,7 +3424,7 @@ function openDebugNotificationViewer() {
   const pos = getFileViewerPosition(0.15, 0.1);
   if (fw.has(key)) fw.close(key);
   fw.open(key, {
-    component: FileViewerContent,
+    component: ContentViewer,
     props: {
       fileContent: content,
       lang: 'text',
@@ -4293,6 +4293,33 @@ function toUint8ArrayFromText(input: string) {
   return new TextEncoder().encode(input);
 }
 
+function isImagePath(path?: string) {
+  const ext = path?.split('.').pop()?.toLowerCase();
+  if (!ext) return false;
+  return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext);
+}
+
+function mimeTypeFromPath(path?: string) {
+  const ext = path?.split('.').pop()?.toLowerCase();
+  switch (ext) {
+    case 'png':
+      return 'image/png';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'gif':
+      return 'image/gif';
+    case 'webp':
+      return 'image/webp';
+    case 'bmp':
+      return 'image/bmp';
+    case 'svg':
+      return 'image/svg+xml';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
 function getFileViewerPosition(factorX = 0.16, factorY = 0.1) {
   const metrics = getCanvasMetrics();
   const x = metrics
@@ -4350,7 +4377,7 @@ async function openGitDiff(payload: { path: string; staged: boolean }) {
     const snapshot = parseFileSnapshotOutput(output);
     if (!fw.has(key)) return;
     await fw.open(key, {
-      component: FileViewerContent,
+      component: DiffViewer,
       props: {
         path,
         isDiff: true,
@@ -4427,7 +4454,7 @@ async function openAllGitDiff(mode: WorktreeSnapshotMode = 'all') {
         : undefined;
 
     await fw.open(key, {
-      component: FileViewerContent,
+      component: DiffViewer,
       props: {
         path: first.file,
         isDiff: true,
@@ -4485,7 +4512,7 @@ function handleShowMessageDiff(payload: { messageKey: string; diffs: Array<Messa
 
   const pos = getFileViewerPosition();
   fw.open(key, {
-    component: FileViewerContent,
+    component: DiffViewer,
     props: {
       path: firstFile,
       isDiff: true,
@@ -4563,7 +4590,7 @@ async function handleShowCommit(hashRaw: string) {
         : undefined;
 
     await fw.open(key, {
-      component: FileViewerContent,
+      component: DiffViewer,
       props: {
         path: first.file,
         isDiff: true,
@@ -4783,10 +4810,10 @@ function handleOpenImage(payload: { url: string; filename: string }) {
   }
   const pos = getFileViewerPosition();
   fw.open(key, {
-    component: ImageViewer,
+    component: ContentViewer,
     props: {
-      src: url,
-      alt: filename,
+      imageSrc: url,
+      imageAlt: filename,
     },
     closable: true,
     resizable: true,
@@ -4842,7 +4869,7 @@ async function openFileViewer(path: string, lines?: string) {
   const pos = getFileViewerPosition(0.18, 0.14);
   const lang = guessLanguage(path);
   fw.open(key, {
-    component: FileViewerContent,
+    component: ContentViewer,
     props: {
       path,
       lang,
@@ -4901,6 +4928,10 @@ async function openFileViewer(path: string, lines?: string) {
       const bytes =
         encoding === 'base64' ? toUint8ArrayFromBase64(content) : toUint8ArrayFromText(content);
       const dump = hexdump(bytes, { color: 'html' });
+      const imageSrc =
+        isImagePath(path) && encoding === 'base64'
+          ? `data:${mimeTypeFromPath(path)};base64,${content}`
+          : undefined;
       fw.updateOptions(key, {
         props: {
           path,
@@ -4908,6 +4939,8 @@ async function openFileViewer(path: string, lines?: string) {
           lines,
           gutterMode: 'none',
           isBinary: true,
+          imageSrc,
+          imageAlt: resolveWorktreeRelativePath(path) || path,
           theme: shikiTheme.value,
         },
       });
