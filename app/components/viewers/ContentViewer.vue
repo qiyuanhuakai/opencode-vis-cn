@@ -7,7 +7,7 @@
         type="button"
         class="viewer-tab"
         :class="{ active: mode.id === activeMode }"
-        @click="activeMode = mode.id"
+        @click="userSelectedMode = mode.id"
       >
         {{ mode.label }}
       </button>
@@ -16,6 +16,7 @@
       <ImageRenderer v-if="activeMode === 'image'" :src="effectiveImageSrc || ''" :alt="path" />
       <MarkdownRenderer
         v-else-if="activeMode === 'rendered'"
+        class="viewer-rendered-markdown"
         :code="effectiveFileContent || ''"
         lang="markdown"
         :theme="theme"
@@ -156,21 +157,34 @@ const availableModes = computed<Array<{ id: ModeId; label: string }>>(() => {
   return modes;
 });
 
-const activeMode = ref<ModeId>('source');
+const preferredDefaultMode = computed<ModeId>(() => {
+  if (canShowAsImage.value) return 'image';
+  if (isMarkdown.value) return 'rendered';
+  return 'source';
+});
 
+// Explicit user tab selection (null = use type-based default)
+const userSelectedMode = ref<ModeId | null>(null);
+
+// Reset user selection when the viewed file changes
 watch(
-  availableModes,
-  (modes) => {
-    const valid = modes.some((mode) => mode.id === activeMode.value);
-    if (!valid && modes[0]) {
-      activeMode.value = modes[0].id;
-    }
+  () => props.path,
+  () => {
+    userSelectedMode.value = null;
   },
-  { immediate: true },
 );
 
-watch(effectiveImageSrc, (src) => {
-  if (src && isBitmapImage.value) activeMode.value = 'image';
+const activeMode = computed<ModeId>(() => {
+  const modes = availableModes.value;
+  // Honor explicit user choice if still valid
+  if (userSelectedMode.value && modes.some((m) => m.id === userSelectedMode.value)) {
+    return userSelectedMode.value;
+  }
+  // File-type preferred default
+  const preferred = modes.find((m) => m.id === preferredDefaultMode.value);
+  if (preferred) return preferred.id;
+  // Fallback
+  return modes[0]?.id ?? 'source';
 });
 
 const showModeTabs = computed(() => availableModes.value.length > 1);
@@ -225,6 +239,10 @@ const showModeTabs = computed(() => availableModes.value.length > 1);
 .viewer-body {
   flex: 1;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
+}
+
+.viewer-rendered-markdown {
+  padding: 0.75em 1em;
 }
 </style>
