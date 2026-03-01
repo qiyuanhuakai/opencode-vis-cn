@@ -37,29 +37,26 @@
               :disabled="isBranchSwitchDisabled(entry)"
               :title="branchDisabledReason(entry)"
             >
-              <div class="tree-branch-menu-row">
-                <div
-                  class="tree-branch-menu-content"
-                  :class="{ 'is-muted': isBranchSwitchDisabled(entry) }"
-                >
-                  <div class="tree-branch-menu-line1">
-                    <Icon
-                      v-if="entry.isCurrent"
-                      icon="lucide:check"
-                      :width="12"
-                      :height="12"
-                      class="tree-branch-current-icon"
-                    />
-                    <span v-else class="tree-branch-current-spacer"></span>
-                    <span class="tree-branch-menu-name">{{ entry.displayName }}</span>
-                  </div>
-                  <div class="tree-branch-menu-line2">
-                    <span class="tree-branch-current-spacer"></span>
-                    <span class="tree-branch-menu-meta" :title="branchSummary(entry)">
-                      {{ branchSummary(entry) }}
-                    </span>
-                  </div>
+              <div class="tree-branch-menu-content">
+                <div class="tree-branch-menu-line1">
+                  <Icon
+                    v-if="entry.isCurrent"
+                    icon="lucide:check"
+                    :width="12"
+                    :height="12"
+                    class="tree-branch-current-icon"
+                  />
+                  <span v-else class="tree-branch-current-spacer"></span>
+                  <span class="tree-branch-menu-name">{{ entry.displayName }}</span>
                 </div>
+                <div class="tree-branch-menu-line2">
+                  <span class="tree-branch-current-spacer"></span>
+                  <span class="tree-branch-menu-meta" :title="branchSummary(entry)">
+                    {{ branchSummary(entry) }}
+                  </span>
+                </div>
+              </div>
+              <template #action>
                 <div class="tree-branch-menu-actions">
                   <button
                     type="button"
@@ -80,7 +77,7 @@
                   </button>
                   <span v-else class="tree-branch-action-spacer"></span>
                 </div>
-              </div>
+              </template>
             </DropdownItem>
             <template v-for="group in filteredRemoteBranchGroups" :key="group.key">
               <DropdownLabel>{{ group.label }}</DropdownLabel>
@@ -91,22 +88,19 @@
                 :disabled="isBranchSwitchDisabled(entry)"
                 :title="branchDisabledReason(entry)"
               >
-                <div class="tree-branch-menu-row">
-                  <div
-                    class="tree-branch-menu-content"
-                    :class="{ 'is-muted': isBranchSwitchDisabled(entry) }"
-                  >
-                    <div class="tree-branch-menu-line1">
-                      <span class="tree-branch-current-spacer"></span>
-                      <span class="tree-branch-menu-name">{{ entry.displayName }}</span>
-                    </div>
-                    <div class="tree-branch-menu-line2">
-                      <span class="tree-branch-current-spacer"></span>
-                      <span class="tree-branch-menu-meta" :title="branchSummary(entry)">
-                        {{ branchSummary(entry) }}
-                      </span>
-                    </div>
+                <div class="tree-branch-menu-content">
+                  <div class="tree-branch-menu-line1">
+                    <span class="tree-branch-current-spacer"></span>
+                    <span class="tree-branch-menu-name">{{ entry.displayName }}</span>
                   </div>
+                  <div class="tree-branch-menu-line2">
+                    <span class="tree-branch-current-spacer"></span>
+                    <span class="tree-branch-menu-meta" :title="branchSummary(entry)">
+                      {{ branchSummary(entry) }}
+                    </span>
+                  </div>
+                </div>
+                <template #action>
                   <div class="tree-branch-menu-actions">
                     <button
                       type="button"
@@ -118,7 +112,7 @@
                     </button>
                     <span class="tree-branch-action-spacer"></span>
                   </div>
-                </div>
+                </template>
               </DropdownItem>
             </template>
             <div v-if="!hasFilteredBranches" class="tree-branch-menu-empty">No branches found.</div>
@@ -402,8 +396,8 @@ const branchTitle = computed(() => {
 const filteredLocalBranches = computed(() => {
   const query = branchSearchQuery.value.trim().toLowerCase();
   const locals = (props.branchEntries ?? []).filter((entry) => entry.isLocal);
-  if (!query) return locals;
-  return locals.filter((entry) => branchSearchText(entry).includes(query));
+  if (!query) return locals.slice(0, 5);
+  return locals.filter((entry) => branchSearchText(entry).includes(query)).slice(0, 5);
 });
 
 const filteredRemoteBranchGroups = computed<BranchGroup[]>(() => {
@@ -419,7 +413,7 @@ const filteredRemoteBranchGroups = computed<BranchGroup[]>(() => {
   return Array.from(groups, ([key, entries]) => ({
     key,
     label: `Remote: ${key}`,
-    entries,
+    entries: entries.slice(0, 5),
   }));
 });
 
@@ -850,23 +844,11 @@ function onRowDoubleClick(row: { node: TreeNode }) {
   flex-shrink: 0;
 }
 
-.tree-branch-menu-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  width: 100%;
-}
-
 .tree-branch-menu-content {
   display: flex;
   flex-direction: column;
   min-width: 0;
   flex: 1;
-}
-
-.tree-branch-menu-content.is-muted {
-  opacity: 0.5;
 }
 
 .tree-branch-menu-line1,

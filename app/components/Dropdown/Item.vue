@@ -8,7 +8,12 @@
     :class="{ 'is-active': isActive, 'is-disabled': props.disabled }"
     @click="onClick"
   >
-    <slot />
+    <div class="ui-dropdown-item-content" :class="{ 'is-disabled': props.disabled }">
+      <slot />
+    </div>
+    <div v-if="$slots.action" class="ui-dropdown-item-action">
+      <slot name="action" />
+    </div>
   </component>
 </template>
 
@@ -75,11 +80,29 @@ a.ui-dropdown-item {
   user-select: none;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   padding: 6px 8px;
   border-radius: 8px;
   font-size: 12px;
+}
+
+.ui-dropdown-item-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.ui-dropdown-item-content.is-disabled {
+  opacity: 0.6;
+}
+
+.ui-dropdown-item-action {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
 }
 
 .ui-dropdown-item.is-active {
