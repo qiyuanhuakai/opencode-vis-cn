@@ -38,10 +38,10 @@
                 type="button"
                 class="history-action-button"
                 :class="{ 'is-favorited': isFavorite(entry) }"
-                title="Add to favorites"
+                title="Bookmark"
                 @click.stop="addFavorite(entry)"
               >
-                <Icon icon="lucide:star" :width="14" :height="14" />
+                <Icon icon="lucide:bookmark" :width="14" :height="14" />
               </button>
             </DropdownItem>
           </div>
@@ -292,48 +292,65 @@
             </Dropdown>
           </div>
         </div>
-        <button
-          type="button"
-          class="input-button suppress-button"
-          :class="{ active: suppressAutoWindows }"
-          :title="suppressAutoWindows ? 'Auto windows suppressed' : 'Suppress auto windows'"
-          @click="suppressAutoWindows = !suppressAutoWindows"
-        >
-          <Icon
-            :icon="suppressAutoWindows ? 'lucide:eye-off' : 'lucide:eye'"
-            :width="16"
-            :height="16"
-          />
-        </button>
-        <button
-          type="button"
-          class="input-button attach-button"
-          :disabled="props.disabled || props.canAttach === false"
-          title="Attach"
-          @click="triggerFileInput"
-        >
-          <Icon icon="lucide:paperclip" :width="16" :height="16" />
-        </button>
-        <button
-          v-if="isThinking"
-          type="button"
-          class="input-button stop send-button"
-          :disabled="props.disabled || !canAbort"
-          title="Stop (ESC x2)"
-          @click="$emit('abort')"
-        >
-          <Icon icon="ph:stop-fill" :width="16" :height="16" />
-        </button>
-        <button
-          v-else
-          type="button"
-          class="input-button primary send-button"
-          :disabled="props.disabled || !canSend"
-          :title="sendTooltip"
-          @click="$emit('send')"
-        >
-          <Icon icon="lucide:send" :width="16" :height="16" />
-        </button>
+        <div class="input-actions">
+          <button
+            type="button"
+            class="input-button suppress-button"
+            :class="{ active: suppressAutoWindows }"
+            :title="suppressAutoWindows ? 'Auto windows suppressed' : 'Suppress auto windows'"
+            @click="suppressAutoWindows = !suppressAutoWindows"
+          >
+            <Icon
+              :icon="suppressAutoWindows ? 'lucide:eye-off' : 'lucide:eye'"
+              :width="16"
+              :height="16"
+            />
+          </button>
+          <button
+            type="button"
+            class="input-button bookmark-button"
+            :title="messageValue.trim() ? 'Bookmark current input' : 'Open bookmarks (\u2193)'"
+            @click="messageValue.trim() ? bookmarkCurrentInput() : (favoritesOpen = true)"
+          >
+            <Icon
+              :icon="messageValue.trim() ? 'lucide:bookmark-plus' : 'lucide:bookmark'"
+              :width="16"
+              :height="16"
+            />
+            <Transition name="bookmark-toast">
+              <span v-if="bookmarkToastVisible" class="bookmark-toast">Bookmarked!</span>
+            </Transition>
+          </button>
+          <button
+            type="button"
+            class="input-button attach-button"
+            :disabled="props.disabled || props.canAttach === false"
+            title="Attach"
+            @click="triggerFileInput"
+          >
+            <Icon icon="lucide:paperclip" :width="16" :height="16" />
+          </button>
+          <button
+            v-if="isThinking"
+            type="button"
+            class="input-button stop send-button"
+            :disabled="props.disabled || !canAbort"
+            title="Stop (ESC x2)"
+            @click="$emit('abort')"
+          >
+            <Icon icon="ph:stop-fill" :width="16" :height="16" />
+          </button>
+          <button
+            v-else
+            type="button"
+            class="input-button primary send-button"
+            :disabled="props.disabled || !canSend"
+            :title="sendTooltip"
+            @click="$emit('send')"
+          >
+            <Icon icon="lucide:send" :width="16" :height="16" />
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -505,6 +522,32 @@ function applyHistoryEntry(entry: HistoryEntry) {
     emit('update:selected-model', entry.model);
   }
   emit('update:selected-thinking', entry.variant);
+  nextTick(() => textareaRef.value?.focus());
+}
+
+const bookmarkToastVisible = ref(false);
+let bookmarkToastTimer: ReturnType<typeof setTimeout> | null = null;
+
+function bookmarkCurrentInput() {
+  const text = messageValue.value.trim();
+  if (!text) return;
+  const agent = props.selectedMode || undefined;
+  const agentOption = agent ? props.agentOptions.find((a) => a.id === agent) : undefined;
+  const resolvedAgentColor = props.resolveAgentColor?.(agent);
+  addFavorite({
+    text,
+    agent,
+    agentColor: agentOption?.color || resolvedAgentColor,
+    model: props.selectedModel || undefined,
+    variant: props.selectedThinking,
+  });
+  messageValue.value = '';
+  // Show toast
+  if (bookmarkToastTimer) clearTimeout(bookmarkToastTimer);
+  bookmarkToastVisible.value = true;
+  bookmarkToastTimer = setTimeout(() => {
+    bookmarkToastVisible.value = false;
+  }, 1500);
   nextTick(() => textareaRef.value?.focus());
 }
 
@@ -1463,13 +1506,13 @@ const inputMessageStyle = computed(() => {
 }
 
 .history-action-button:hover {
-  color: #fbbf24;
-  background: rgba(251, 191, 36, 0.14);
-  border-color: rgba(251, 191, 36, 0.3);
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.14);
+  border-color: rgba(34, 197, 94, 0.3);
 }
 
 .history-action-button.is-favorited {
-  color: #fbbf24;
+  color: #4ade80;
 }
 
 .history-action-button.remove:hover {
@@ -1535,8 +1578,15 @@ const inputMessageStyle = computed(() => {
   color: #fca5a5;
 }
 
-.suppress-button {
+.input-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.suppress-button {
 }
 
 .suppress-button.active {
@@ -1547,5 +1597,53 @@ const inputMessageStyle = computed(() => {
 .suppress-button.active:hover {
   background: rgba(239, 68, 68, 0.35);
   color: #fca5a5;
+}
+
+.bookmark-button {
+  position: relative;
+}
+
+.bookmark-button:hover:not(:disabled) {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+
+.bookmark-toast {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.95);
+  color: #4ade80;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+  box-shadow: 0 4px 12px rgba(2, 6, 23, 0.5);
+  pointer-events: none;
+}
+
+.bookmark-toast-enter-active {
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.bookmark-toast-leave-active {
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease;
+}
+
+.bookmark-toast-enter-from {
+  opacity: 0;
+  transform: translateX(-50%) translateY(4px);
+}
+
+.bookmark-toast-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-4px);
 }
 </style>
