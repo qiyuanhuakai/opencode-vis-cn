@@ -374,6 +374,7 @@ import { useSessionSelection } from './composables/useSessionSelection';
 import { useSubagentWindows } from './composables/useSubagentWindows';
 import { renderWorkerHtml, type RenderRequest } from './utils/workerRenderer';
 import type { MessagePart, ReasoningPart, ToolPart } from './types/sse';
+import { DEFAULT_OPENCODE_URL } from './utils/constants';
 import { resolveProjectColorHex } from './utils/stateBuilder';
 import {
   extractFileRead as extractToolFileRead,
@@ -381,7 +382,7 @@ import {
 } from './utils/toolRenderers';
 import * as opencodeApi from './utils/opencode';
 import { opencodeTheme, resolveTheme, resolveAgentColor } from './utils/theme';
-import { splitFileContentDirectoryAndPath } from './utils/path';
+import { splitFileContentDirectoryAndPath, normalizeDirectory } from './utils/path';
 import { useCredentials } from './composables/useCredentials';
 import { useSettings } from './composables/useSettings';
 import {
@@ -1077,7 +1078,7 @@ const connectionState = ref<'connecting' | 'bootstrapping' | 'ready' | 'reconnec
 const reconnectingMessage = ref('');
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let initializationInFlight = false;
-const loginUrl = ref('http://localhost:4096');
+const loginUrl = ref(DEFAULT_OPENCODE_URL);
 const loginUsername = ref('');
 const loginPassword = ref('');
 const loginRequiresAuth = ref(false);
@@ -1510,11 +1511,6 @@ const commandOptions = computed(() => {
   list.sort((a, b) => a.name.localeCompare(b.name));
   return list;
 });
-
-function normalizeDirectory(value: string) {
-  const trimmed = value.replace(/\/+$/, '');
-  return trimmed || value;
-}
 
 function replaceHomePrefix(path: string) {
   const normalizedPath = normalizeDirectory(path);
