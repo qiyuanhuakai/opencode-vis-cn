@@ -374,6 +374,8 @@ import { useSessionSelection } from './composables/useSessionSelection';
 import { useSubagentWindows } from './composables/useSubagentWindows';
 import { renderWorkerHtml, type RenderRequest } from './utils/workerRenderer';
 import type { MessagePart, ReasoningPart, ToolPart } from './types/sse';
+import type { ProjectState, SandboxState } from './types/worker-state';
+import type { Terminal } from '@xterm/xterm';
 import { DEFAULT_OPENCODE_URL } from './utils/constants';
 import { resolveProjectColorHex } from './utils/stateBuilder';
 import {
@@ -620,7 +622,7 @@ type PtyInfo = {
 
 type ShellSession = {
   pty: PtyInfo;
-  terminal: unknown; // Terminal type from dynamic import
+  terminal: Terminal;
   socket?: WebSocket;
   exiting?: boolean;
   closeOnSuccess?: boolean;
@@ -970,7 +972,7 @@ function collectAllSessionsByProject() {
   const byProject: Record<string, SessionInfo[]> = {};
   Object.values(serverState.projects).forEach((project) => {
     const list: SessionInfo[] = [];
-    Object.values(project.sandboxes).forEach((sandbox) => {
+    (Object.values(project.sandboxes) as SandboxState[]).forEach((sandbox) => {
       Object.values(sandbox.sessions).forEach((session) => {
         list.push(toSessionInfo(project.id, sandbox.directory, session));
       });
@@ -1142,7 +1144,7 @@ function computeProjectsHash(projects: Record<string, ProjectState>): string {
   const projectEntries = Object.entries(projects);
   for (const [id, project] of projectEntries) {
     hash ^= id.length + Object.keys(project.sandboxes).length;
-    for (const sandbox of Object.values(project.sandboxes)) {
+    for (const sandbox of (Object.values(project.sandboxes) as SandboxState[])) {
       hash += sandbox.rootSessions.length;
       for (const sessionId of sandbox.rootSessions) {
         const session = sandbox.sessions[sessionId];
@@ -1170,7 +1172,7 @@ const topPanelTreeData = computed<TopPanelWorktree[]>(() => {
   const entries = Object.values(serverState.projects)
     .map((project) => {
       const worktreeDirectory = project.worktree;
-      const sandboxEntries = Object.values(project.sandboxes)
+      const sandboxEntries = (Object.values(project.sandboxes) as SandboxState[])
         .map((sandbox) => {
           const sessionsForSandbox = sandbox.rootSessions
             .map((sessionId) => sandbox.sessions[sessionId])
@@ -1336,7 +1338,7 @@ const sessionRevert = computed<SessionInfo['revert'] | null>(() => {
   if (!projectId || !sessionId) return null;
   const project = serverState.projects[projectId];
   if (!project) return null;
-  for (const sandbox of Object.values(project.sandboxes)) {
+  for (const sandbox of (Object.values(project.sandboxes) as SandboxState[])) {
     const session = sandbox.sessions[sessionId];
     if (session) return session.revert ?? null;
   }
@@ -1401,7 +1403,7 @@ const pinnedSessions = computed<SidePanelPinnedSession[]>(() => {
   for (const project of Object.values(serverState.projects)) {
     const projectName =
       project.name?.trim() || project.worktree.replace(/\/+$/, '').split('/').pop() || project.id;
-    for (const sandbox of Object.values(project.sandboxes)) {
+    for (const sandbox of (Object.values(project.sandboxes) as SandboxState[])) {
       for (const session of Object.values(sandbox.sessions)) {
         if (session.parentID || session.timeArchived) continue;
         const pinnedAt = getEffectivePinnedAt(project.id, session.id, session.timePinned);
@@ -1862,7 +1864,7 @@ function reconcileLocalPinnedSessionStore() {
   const activeSessionKeys = new Set<string>();
 
   for (const project of Object.values(serverState.projects)) {
-    for (const sandbox of Object.values(project.sandboxes)) {
+    for (const sandbox of (Object.values(project.sandboxes) as SandboxState[])) {
       for (const session of Object.values(sandbox.sessions)) {
         const key = pinnedSessionStoreKey(project.id, session.id);
         if (!key) continue;
@@ -1958,7 +1960,7 @@ function findSessionInProjects(sessionId: string) {
   const target = sessionId.trim();
   if (!target) return null;
   for (const [projectId, project] of Object.entries(serverState.projects)) {
-    for (const sandbox of Object.values(project.sandboxes)) {
+    for (const sandbox of (Object.values(project.sandboxes) as SandboxState[])) {
       const session = sandbox.sessions[target];
       if (!session) continue;
       return {
@@ -3503,7 +3505,7 @@ async function ensureShellWindow(pty: PtyInfo) {
   });
 }
 
-function resizeWindowToFitTerminal(key: string, terminal: unknown, _host: HTMLElement) {
+function resizeWindowToFitTerminal(key: string, terminal: Terminal, _host: HTMLElement) {
   const cell = getTerminalCellSize(terminal);
   if (!cell) return;
 
@@ -3538,7 +3540,7 @@ function scheduleShellFitAll() {
   });
 }
 
-function getTerminalCellSize(terminal: unknown): { width: number; height: number } | null {
+function getTerminalCellSize(terminal: Terminal): { width: number; height: number } | null {
   // Prefer measuring from rendered screen (most accurate)
   const termEl = terminal.element;
   if (termEl && terminal.cols > 0 && terminal.rows > 0) {
@@ -3971,7 +3973,7 @@ function formatSessionGraphDump(): string {
   const totalSessions = allProjects.reduce((count, project) => {
     return (
       count +
-      Object.values(project.sandboxes).reduce((projectCount, sandbox) => {
+      (Object.values(project.sandboxes) as SandboxState[]).reduce((projectCount, sandbox) => {
         return projectCount + Object.keys(sandbox.sessions).length;
       }, 0)
     );
@@ -4666,7 +4668,7 @@ watch(pinnedSessionsLimit, () => {
 const pinnedSessionReconciliationDeps = computed(() => {
   const deps: Array<[string, number | undefined, number | undefined, string | undefined]> = [];
   for (const project of Object.values(serverState.projects)) {
-    for (const sandbox of Object.values(project.sandboxes)) {
+    for (const sandbox of (Object.values(project.sandboxes) as SandboxState[])) {
       for (const session of Object.values(sandbox.sessions)) {
         const key = pinnedSessionStoreKey(project.id, session.id);
         if (!key) continue;
